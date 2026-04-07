@@ -50,7 +50,6 @@ const state = {
 
 const sessionTableBody = document.getElementById("session-table-body");
 const sessionListMeta = document.getElementById("session-list-meta");
-const sessionSelectionMeta = document.getElementById("session-selection-meta");
 const sessionPageMeta = document.getElementById("session-page-meta");
 const sessionDetailContent = document.getElementById("session-detail-content");
 const sessionDetailFooter = document.getElementById("session-detail-footer");
@@ -117,6 +116,62 @@ function buildExecutionQueryString() {
     page: String(state.executions.page),
     page_size: String(state.executions.pageSize),
   }).toString();
+}
+
+function padDatePart(value) {
+  return String(value).padStart(2, "0");
+}
+
+function formatExecutionHistoryTime(value) {
+  if (!value) {
+    return "-";
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return String(value);
+  }
+  return [
+    parsed.getFullYear(),
+    padDatePart(parsed.getMonth() + 1),
+    padDatePart(parsed.getDate()),
+  ].join("-") + ` ${[
+    padDatePart(parsed.getHours()),
+    padDatePart(parsed.getMinutes()),
+    padDatePart(parsed.getSeconds()),
+  ].join(":")}`;
+}
+
+function summarizeExecutionArgs(args, maxLength = 104) {
+  const summary = Array.isArray(args)
+    ? args.map((item) => String(item ?? "").trim()).filter(Boolean).join(" ").replace(/\s+/g, " ").trim()
+    : "";
+  if (!summary) {
+    return "No args";
+  }
+  if (summary.length <= maxLength) {
+    return summary;
+  }
+  return `${summary.slice(0, maxLength - 1)}...`;
+}
+
+function executionHistoryTitle(item) {
+  const parts = [
+    item.command || "-",
+    summarizeExecutionArgs(item.args, 220),
+    item.started_at || "-",
+    item.cwd || "-",
+  ].filter(Boolean);
+  return parts.join(" | ");
+}
+
+function renderEmptyState(title, copy = "") {
+  const detail = String(copy || "").trim();
+  return `
+    <div class="empty">
+      <div class="empty-title">${escapeHTML(title)}</div>
+      ${detail ? `<div class="empty-copy">${detail}</div>` : ""}
+    </div>
+  `;
 }
 
 function cloneMount(mount, origin = "manual") {
@@ -423,9 +478,7 @@ function renderSessionTable() {
   const totalPages = Math.max(1, Math.ceil(Math.max(state.sessions.total, 1) / state.sessions.pageSize));
   sessionPageMeta.textContent = `Page ${state.sessions.page} / ${totalPages}`;
   sessionListMeta.textContent = `${state.sessions.total} matching session(s)`;
-  sessionSelectionMeta.textContent = state.sessions.selectedID
-    ? `Selected: ${state.sessions.selectedID}`
-    : "No session selected.";
+
 
   if (state.sessions.items.length === 0) {
     sessionTableBody.innerHTML = `
@@ -641,28 +694,54 @@ function renderExecuteLogs() {
   executionPageMeta.textContent = `Page ${state.executions.page} / ${totalPages}`;
 
   if (!state.executions.sessionID) {
-    executionHistory.innerHTML = `<div class="empty">No session selected.</div>`;
+    executionHistory.innerHTML = renderEmptyState(
+      "No session selected",
+      "Open a session first to view persisted execution history.",
+    );
     executionDetail.className = "empty";
-    executionDetail.textContent = "Select an execution from the history list.";
+    executionDetail.innerHTML = `
+      <div class="empty-title">No execution selected</div>
+      <div class="empty-copy">Select an execution from the history list to inspect its args and output.</div>
+    `;
     return;
   }
 
   if (state.executions.items.length === 0) {
-    executionHistory.innerHTML = `<div class="empty">No persisted execute logs. This usually means \`ENABLE_EXEC_LOG_PERSIST\` is disabled or no commands were executed yet.</div>`;
+    executionHistory.innerHTML = renderEmptyState(
+      "No persisted execute logs",
+      "Enable <code>ENABLE_EXEC_LOG_PERSIST</code> to store future executions, or run a command if nothing has executed yet.",
+    );
     executionDetail.className = "empty";
-    executionDetail.textContent = "Execute detail will appear here when a persisted log entry is selected.";
+    executionDetail.innerHTML = `
+      <div class="empty-title">Execution detail will appear here</div>
+      <div class="empty-copy">Select a persisted log entry from the history list once execution logs are available.</div>
+    `;
     return;
   }
 
   executionHistory.innerHTML = state.executions.items.map((item) => `
-    <div class="history-item ${state.executions.selectedID === item.id ? "active" : ""}" data-execution-id="${item.id}">
-      <div class="toolbar">
-        <strong>${escapeHTML(item.command || "-")}</strong>
+    <button
+      type="button"
+      class="history-item ${state.executions.selectedID === item.id ? "active" : ""}"
+      data-execution-id="${item.id}"
+      aria-pressed="${state.executions.selectedID === item.id ? "true" : "false"}"
+      title="${escapeHTML(executionHistoryTitle(item))}"
+    >
+      <div class="history-item-head">
+        <div class="history-item-body">
+          <div class="history-item-command">${escapeHTML(item.command || "-")}</div>
+          <div class="history-item-args">${escapeHTML(summarizeExecutionArgs(item.args))}</div>
+        </div>
         <span class="pill ${item.exit_code === 0 ? "" : "stopped"}">exit ${escapeHTML(item.exit_code)}</span>
       </div>
-      <div class="meta">${escapeHTML(item.started_at || "-")}</div>
-      <div class="meta">${escapeHTML(item.cwd || "-")} · ${escapeHTML(item.duration_ms)} ms</div>
-    </div>
+      <div class="history-item-meta">
+        <span class="history-chip">${escapeHTML(formatExecutionHistoryTime(item.started_at))}</span>
+        <span class="history-chip">${escapeHTML(item.duration_ms)} ms</span>
+        <span class="history-chip history-chip-path">${escapeHTML(item.cwd || "-")}</span>
+        ${(item.args || []).length > 0 ? `<span class="history-chip">${escapeHTML((item.args || []).length)} arg${(item.args || []).length === 1 ? "" : "s"}</span>` : ""}
+        ${item.timed_out ? `<span class="history-chip history-chip-alert">timed out</span>` : ""}
+      </div>
+    </button>
   `).join("");
 
   executionHistory.querySelectorAll("[data-execution-id]").forEach((node) => {

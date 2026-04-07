@@ -301,37 +301,30 @@ function renderEnvironmentOverview(item = state.environments.selectedSummary) {
       <div class="detail-box">
         <div class="meta">Last Build</div>
         <strong>${escapeHTML(formatBuildSummary(lastBuild))}</strong>
-        <div class="meta">${escapeHTML(lastBuild ? "Most recent build job status and target." : "No build job has been recorded.")}</div>
       </div>
       <div class="detail-box">
         <div class="meta">Build Started</div>
         <strong>${escapeHTML(buildStartedAt)}</strong>
-        <div class="meta">${escapeHTML(lastBuild ? "From the most recent build job." : "No build start time available.")}</div>
       </div>
       <div class="detail-box">
         <div class="meta">Packaged At</div>
         <strong>${escapeHTML(metadata.createdAt)}</strong>
-        <div class="meta">Image metadata creation time.</div>
       </div>
       <div class="detail-box">
         <div class="meta">Build Finished</div>
         <strong>${escapeHTML(buildFinishedAt)}</strong>
-        <div class="meta">${escapeHTML(lastBuild ? "Shown when the latest build job completes." : "No build finish time available.")}</div>
       </div>
       <div class="detail-box">
         <div class="meta">Transfer Size</div>
-        <strong>${escapeHTML(metadata.totalSize)}</strong>
-        <div class="meta">Total image transfer footprint.</div>
+        <strong>${escapeHTML(metadata.uniqueSize)}</strong>
       </div>
       <div class="detail-box">
         <div class="meta">Config Updated</div>
         <strong>${escapeHTML(configUpdatedAt)}</strong>
-        <div class="meta">Created ${escapeHTML(configCreatedAt)}</div>
       </div>
       <div class="detail-box">
         <div class="meta">Disk Size</div>
-        <strong>${escapeHTML(metadata.uniqueSize)}</strong>
-        <div class="meta">Unique local disk usage.</div>
+        <strong>${escapeHTML(metadata.totalSize)}</strong>
       </div>
     </div>
   `;
@@ -472,11 +465,11 @@ function renderEnvironments() {
         </div>
         <div class="environment-metric">
           <span class="environment-metric-label">Transfer</span>
-          <strong class="environment-metric-value">${escapeHTML(imageMetadataLabel(item).totalSize)}</strong>
+          <strong class="environment-metric-value">${escapeHTML(imageMetadataLabel(item).uniqueSize)}</strong>
         </div>
         <div class="environment-metric">
           <span class="environment-metric-label">Disk</span>
-          <strong class="environment-metric-value">${escapeHTML(imageMetadataLabel(item).uniqueSize)}</strong>
+          <strong class="environment-metric-value">${escapeHTML(imageMetadataLabel(item).totalSize)}</strong>
         </div>
       </div>
     </div>

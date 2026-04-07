@@ -665,11 +665,39 @@ td strong {
 }
 
 .empty {
+  display: grid;
+  gap: 8px;
   border: 1px dashed var(--line);
   border-radius: var(--radius-md);
-  padding: 18px;
+  padding: 18px 20px;
   color: var(--muted);
-  background: rgba(255, 255, 255, 0.55);
+  font-size: 14px;
+  line-height: 1.6;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.76), rgba(255, 255, 255, 0.58)),
+    rgba(255, 255, 255, 0.55);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.empty-title {
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.empty-copy {
+  color: var(--muted);
+  text-wrap: pretty;
+}
+
+.empty code {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(31, 42, 45, 0.06);
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.92em;
 }
 
 .pagination {
@@ -749,6 +777,7 @@ td strong {
   flex-direction: column;
   gap: 14px;
   min-height: 0;
+  overflow: hidden;
 }
 
 .execution-log-layout .split {
@@ -758,6 +787,30 @@ td strong {
 
 .execution-log-layout .split>* {
   min-height: 0;
+}
+
+.execution-log-split {
+  grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  align-items: stretch;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.execution-history-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.execution-history-pagination {
+  flex: 0 0 auto;
+  justify-content: space-between;
+  padding-top: 10px;
+  margin-top: 6px;
+  border-top: 1px solid rgba(31, 42, 45, 0.08);
 }
 
 .mount-editor-list {
@@ -776,11 +829,40 @@ td strong {
 }
 
 .history-item {
+  appearance: none;
   display: grid;
   gap: 10px;
-  height: 128px;
+  width: 100%;
+  min-height: 118px;
+  padding: 12px;
+  border: 1px solid rgba(31, 42, 45, 0.08);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.84);
   overflow: hidden;
   cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  box-shadow: none;
+  transition:
+    border-color var(--duration-fast) ease,
+    box-shadow var(--duration-fast) ease,
+    background var(--duration-fast) ease;
+}
+
+.history-item:hover {
+  background: rgba(10, 107, 105, 0.04);
+  border-color: rgba(10, 107, 105, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(10, 107, 105, 0.06);
+}
+
+.history-item:focus-visible {
+  outline: 2px solid rgba(10, 107, 105, 0.32);
+  outline-offset: 2px;
+}
+
+.history-item:active {
+  transform: none;
 }
 
 .history-item-head {
@@ -792,7 +874,7 @@ td strong {
 
 .history-item-body {
   display: grid;
-  gap: 4px;
+  gap: 6px;
   min-width: 0;
 }
 
@@ -800,6 +882,18 @@ td strong {
   display: -webkit-box;
   overflow: hidden;
   line-height: 1.4;
+  text-overflow: ellipsis;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  font-weight: 700;
+}
+
+.history-item-args {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
   text-overflow: ellipsis;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -822,17 +916,38 @@ td strong {
   background: rgba(31, 42, 45, 0.06);
 }
 
+.history-chip-path {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-chip-alert {
+  color: var(--warm);
+  background: rgba(200, 102, 61, 0.12);
+}
+
 .history-item.active {
-  background: rgba(10, 107, 105, 0.08);
-  border-color: rgba(10, 107, 105, 0.35);
-  box-shadow: inset 0 0 0 1px rgba(10, 107, 105, 0.18);
+  background: rgba(10, 107, 105, 0.09);
+  border-color: rgba(10, 107, 105, 0.3);
+  box-shadow: inset 0 0 0 1px rgba(10, 107, 105, 0.14);
+}
+
+.history-item.active:hover {
+  background: rgba(10, 107, 105, 0.1);
+  border-color: rgba(10, 107, 105, 0.32);
+  box-shadow: inset 0 0 0 1px rgba(10, 107, 105, 0.16);
 }
 
 .execution-history {
   align-content: start;
+  flex: 1 1 auto;
   min-height: 0;
+  max-height: 100%;
   overflow-y: auto;
-  padding-right: 4px;
+  overscroll-behavior: contain;
+  padding-right: 6px;
 }
 
 #execution-detail {

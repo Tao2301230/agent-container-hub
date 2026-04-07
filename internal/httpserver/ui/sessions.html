@@ -32,25 +32,6 @@
 		<main class="shell">
 			<section class="panel">
 				<div class="card stack">
-					<div class="toolbar wrap">
-						<div>
-							<h2>Session Table</h2>
-							<div class="meta">
-								Default shows history sessions. Switch to active
-								sessions and narrow the list with the filters
-								and pagination controls below.
-							</div>
-						</div>
-						<div class="actions">
-							<button class="ghost" id="refresh-sessions">
-								Refresh
-							</button>
-							<button id="open-create-session">
-								Create Session
-							</button>
-						</div>
-					</div>
-
 					<div class="row filters">
 						<label
 							>Status
@@ -106,12 +87,27 @@
 						</div>
 					</div>
 
-					<div class="toolbar">
-						<div class="meta" id="session-list-meta">
-							Loading sessions...
+					<div
+						class="toolbar"
+						style="
+							flex-direction: row;
+							justify-content: space-between;
+							align-items: center;
+						"
+					>
+						<div>
+							<div class="meta" id="session-list-meta">
+								Loading sessions...
+							</div>
 						</div>
-						<div class="meta" id="session-selection-meta">
-							No session selected.
+
+						<div class="actions">
+							<button class="ghost" id="refresh-sessions">
+								Refresh
+							</button>
+							<button id="open-create-session">
+								Create Session
+							</button>
 						</div>
 					</div>
 
@@ -313,29 +309,29 @@ No session created yet.</pre
 					</button>
 				</div>
 				<div class="modal-body">
-					<div class="stack">
-						<div class="toolbar">
-							<div class="meta" id="execute-modal-meta">
-								No session selected.
-							</div>
-							<div class="pagination">
-								<button class="secondary" id="execution-prev">
-									Previous
-								</button>
-								<span class="meta" id="execution-page-meta"
-									>Page 1</span
-								>
-								<button class="secondary" id="execution-next">
-									Next
-								</button>
-							</div>
+					<div class="execution-log-layout">
+						<div class="meta" id="execute-modal-meta">
+							No session selected.
 						</div>
 
-						<div class="split">
-							<div
-								id="execution-history"
-								class="execution-history"
-							></div>
+						<div class="split execution-log-split">
+							<div class="execution-history-panel">
+								<div
+									id="execution-history"
+									class="execution-history"
+								></div>
+								<div class="pagination execution-history-pagination">
+									<button class="secondary" id="execution-prev">
+										Previous
+									</button>
+									<span class="meta" id="execution-page-meta"
+										>Page 1</span
+									>
+									<button class="secondary" id="execution-next">
+										Next
+									</button>
+								</div>
+							</div>
 							<div id="execution-detail" class="empty">
 								Select an execution from the history list.
 							</div>
