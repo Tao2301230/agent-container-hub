@@ -25,6 +25,7 @@ const state = {
   environments: {
     items: [],
     selectedName: "",
+    selectedSummary: null,
     selectedBuild: defaultBuild(),
     selectedDetails: defaultEnvironmentDetails(),
     selectedAvailable: false,
@@ -46,6 +47,7 @@ const state = {
 };
 
 const environmentList = document.getElementById("environment-list");
+const environmentOverview = document.getElementById("environment-overview");
 const environmentOutput = document.getElementById("environment-output");
 const environmentYAML = document.getElementById("environment-yaml");
 const saveButton = document.getElementById("save");
@@ -77,6 +79,7 @@ function clearEnvironmentForm() {
   document.getElementById("default-execute-cwd").value = "";
   document.getElementById("default-execute-timeout").value = "";
   document.getElementById("default-execute-args").value = "";
+  state.environments.selectedSummary = null;
   state.environments.selectedBuild = defaultBuild();
   state.environments.selectedDetails = defaultEnvironmentDetails();
   state.environments.selectedAvailable = false;
@@ -90,6 +93,7 @@ function clearEnvironmentForm() {
   environmentFilePath.value = "";
   environmentFileContent.value = "";
   renderEnvironmentFiles();
+  renderEnvironmentOverview();
   updateBuildButton();
 }
 
@@ -180,7 +184,7 @@ function availabilityClass(item) {
   return item?.available ? "" : "stopped";
 }
 
-function formatImageTimestamp(value) {
+function formatImageTimestamp(value, { includeSeconds = true } = {}) {
   if (!value) {
     return "-";
   }
@@ -188,15 +192,18 @@ function formatImageTimestamp(value) {
   if (Number.isNaN(parsed.getTime())) {
     return String(value);
   }
-  return new Intl.DateTimeFormat(undefined, {
+  const options = {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-    second: "2-digit",
     hour12: false,
-  }).format(parsed);
+  };
+  if (includeSeconds) {
+    options.second = "2-digit";
+  }
+  return new Intl.DateTimeFormat(undefined, options).format(parsed);
 }
 
 function formatBytes(value) {
@@ -215,12 +222,33 @@ function formatBytes(value) {
   return `${size.toFixed(digits)} ${units[index]}`;
 }
 
-function imageMetadataLabel(item) {
+function imageMetadataLabel(item, options = {}) {
   return {
-    createdAt: formatImageTimestamp(item?.image_metadata?.created_at),
+    createdAt: formatImageTimestamp(item?.image_metadata?.created_at, options),
     totalSize: formatBytes(item?.image_metadata?.total_size_bytes),
     uniqueSize: formatBytes(item?.image_metadata?.unique_size_bytes),
   };
+}
+
+function formatBuildSummary(job) {
+  if (!job) {
+    return "No build yet";
+  }
+  return `${formatBuildStatus(job.status)}${buildTargetSuffix(job.target)}`;
+}
+
+function formatBuildMoment(job, field, options = {}) {
+  return formatImageTimestamp(job?.[field], options);
+}
+
+function formatBuildMetaLine(job, options = {}) {
+  if (!job) {
+    return "Last build: none";
+  }
+  const startedAt = formatBuildMoment(job, "started_at", options);
+  return startedAt === "-"
+    ? `Last build: ${formatBuildSummary(job)}`
+    : `Last build: ${formatBuildSummary(job)} · ${startedAt}`;
 }
 
 function environmentStatusSummary(item) {
@@ -228,18 +256,85 @@ function environmentStatusSummary(item) {
   const availabilityLabel = item?.available ? "image available locally" : "image missing locally";
   const metadata = imageMetadataLabel(item);
   const lines = [
-    `镜像: ${item?.image_ref || "-"}`,
-    `状态: ${enabledLabel} · ${availabilityLabel}`,
-    `打包时间: ${metadata.createdAt}`,
-    `传输大小: ${metadata.totalSize}`,
-    `磁盘大小: ${metadata.uniqueSize}`,
+    `Image: ${item?.image_ref || "-"}`,
+    `Status: ${enabledLabel} · ${availabilityLabel}`,
+    `Packaged at: ${metadata.createdAt}`,
+    `Transfer size: ${metadata.totalSize}`,
+    `Disk size: ${metadata.uniqueSize}`,
   ];
   if (item?.last_build) {
-    lines.unshift(`最近构建: ${formatBuildStatus(item.last_build.status)}${buildTargetSuffix(item.last_build.target)} @ ${formatImageTimestamp(item.last_build.started_at)}`);
+    lines.unshift(`Last build: ${formatBuildStatus(item.last_build.status)}${buildTargetSuffix(item.last_build.target)} @ ${formatImageTimestamp(item.last_build.started_at)}`);
   } else {
-    lines.unshift("最近构建: 暂无");
+    lines.unshift("Last build: none");
   }
   return lines.join("\n");
+}
+
+function renderEnvironmentOverview(item = state.environments.selectedSummary) {
+  if (!environmentOverview) {
+    return;
+  }
+  if (!item) {
+    environmentOverview.innerHTML = `
+      <div class="empty">Select an environment to inspect image metadata.</div>
+    `;
+    return;
+  }
+
+  const metadata = imageMetadataLabel(item);
+  const lastBuild = item?.last_build || null;
+  const buildStartedAt = formatBuildMoment(lastBuild, "started_at");
+  const buildFinishedAt = formatBuildMoment(lastBuild, "finished_at");
+  const configUpdatedAt = formatImageTimestamp(item?.updated_at);
+  const configCreatedAt = formatImageTimestamp(item?.created_at);
+
+  environmentOverview.innerHTML = `
+    <div class="detail-grid environment-overview-grid">
+      <div class="detail-box environment-overview-wide">
+        <div class="meta">Image Ref</div>
+        <strong>${escapeHTML(item?.image_ref || "-")}</strong>
+        <div class="environment-overview-status">
+          <span class="pill ${item?.enabled ? "" : "stopped"}">${item?.enabled ? "enabled" : "disabled"}</span>
+          <span class="pill ${availabilityClass(item)}">${escapeHTML(formatAvailabilityLabel(item))}</span>
+        </div>
+      </div>
+      <div class="detail-box">
+        <div class="meta">Last Build</div>
+        <strong>${escapeHTML(formatBuildSummary(lastBuild))}</strong>
+        <div class="meta">${escapeHTML(lastBuild ? "Most recent build job status and target." : "No build job has been recorded.")}</div>
+      </div>
+      <div class="detail-box">
+        <div class="meta">Build Started</div>
+        <strong>${escapeHTML(buildStartedAt)}</strong>
+        <div class="meta">${escapeHTML(lastBuild ? "From the most recent build job." : "No build start time available.")}</div>
+      </div>
+      <div class="detail-box">
+        <div class="meta">Packaged At</div>
+        <strong>${escapeHTML(metadata.createdAt)}</strong>
+        <div class="meta">Image metadata creation time.</div>
+      </div>
+      <div class="detail-box">
+        <div class="meta">Build Finished</div>
+        <strong>${escapeHTML(buildFinishedAt)}</strong>
+        <div class="meta">${escapeHTML(lastBuild ? "Shown when the latest build job completes." : "No build finish time available.")}</div>
+      </div>
+      <div class="detail-box">
+        <div class="meta">Transfer Size</div>
+        <strong>${escapeHTML(metadata.totalSize)}</strong>
+        <div class="meta">Total image transfer footprint.</div>
+      </div>
+      <div class="detail-box">
+        <div class="meta">Config Updated</div>
+        <strong>${escapeHTML(configUpdatedAt)}</strong>
+        <div class="meta">Created ${escapeHTML(configCreatedAt)}</div>
+      </div>
+      <div class="detail-box">
+        <div class="meta">Disk Size</div>
+        <strong>${escapeHTML(metadata.uniqueSize)}</strong>
+        <div class="meta">Unique local disk usage.</div>
+      </div>
+    </div>
+  `;
 }
 
 function normalizeBuildTargets(targets) {
@@ -360,19 +455,30 @@ async function refreshEnvironments(selectedName = "") {
 
 function renderEnvironments() {
   environmentList.innerHTML = state.environments.items.map((item) => `
-    <div class="list-item ${state.environments.selectedName === item.name ? "active" : ""}" data-environment-name="${escapeHTML(item.name)}">
-      <div class="toolbar">
-        <strong>${escapeHTML(item.name)}</strong>
+    <div class="list-item environment-list-item ${state.environments.selectedName === item.name ? "active" : ""}" data-environment-name="${escapeHTML(item.name)}">
+      <div class="environment-list-head">
+        <div class="environment-list-title">
+          <strong>${escapeHTML(item.name)}</strong>
+        </div>
         <div class="actions">
           <span class="pill ${item.enabled ? "" : "stopped"}">${item.enabled ? "enabled" : "disabled"}</span>
           <span class="pill ${availabilityClass(item)}">${escapeHTML(formatAvailabilityLabel(item))}</span>
         </div>
       </div>
-      <div class="meta">${escapeHTML(item.image_ref || "-")}</div>
-      <div class="meta">${item.last_build ? `last build: ${escapeHTML(formatBuildStatus(item.last_build.status))}` : "no build yet"}</div>
-      <div class="meta">${item.available ? "image available locally" : "image missing locally"}</div>
-      <div class="meta">打包时间: ${escapeHTML(imageMetadataLabel(item).createdAt)}</div>
-      <div class="meta">传输大小: ${escapeHTML(imageMetadataLabel(item).totalSize)} · 磁盘大小: ${escapeHTML(imageMetadataLabel(item).uniqueSize)}</div>
+      <div class="environment-list-metrics">
+        <div class="environment-metric environment-metric-wide">
+          <span class="environment-metric-label">Packaged</span>
+          <strong class="environment-metric-value">${escapeHTML(imageMetadataLabel(item, { includeSeconds: false }).createdAt)}</strong>
+        </div>
+        <div class="environment-metric">
+          <span class="environment-metric-label">Transfer</span>
+          <strong class="environment-metric-value">${escapeHTML(imageMetadataLabel(item).totalSize)}</strong>
+        </div>
+        <div class="environment-metric">
+          <span class="environment-metric-label">Disk</span>
+          <strong class="environment-metric-value">${escapeHTML(imageMetadataLabel(item).uniqueSize)}</strong>
+        </div>
+      </div>
     </div>
   `).join("") || `<div class="empty">No environments yet.</div>`;
 
@@ -391,6 +497,7 @@ function updateBuildButton() {
 async function selectEnvironment(name) {
   const item = await api(`/api/environments/${name}`);
   state.environments.selectedName = item.name;
+  state.environments.selectedSummary = item;
   document.getElementById("name").value = item.name || "";
   document.getElementById("repository").value = item.image_repository || "";
   document.getElementById("tag").value = item.image_tag || "";
@@ -407,6 +514,7 @@ async function selectEnvironment(name) {
   document.getElementById("default-execute-timeout").value = state.environments.selectedDefaultExecute.timeout_ms || "";
   document.getElementById("default-execute-args").value = state.environments.selectedDefaultExecute.args.join("\n");
   state.environments.selectedAvailableBuildTargets = normalizeBuildTargets(item.available_build_targets);
+  renderEnvironmentOverview(item);
   environmentOutput.textContent = environmentStatusSummary(item);
   environmentYAML.textContent = item.yaml || "No YAML available.";
   updateBuildButton();
@@ -453,6 +561,14 @@ function syncBuildReference(job) {
       ? { ...item, last_build: normalizeBuildJob(job), available: job.status === "succeeded" ? true : item.available }
       : item
   ));
+  if (state.environments.selectedSummary?.name === job.environment_name) {
+    state.environments.selectedSummary = {
+      ...state.environments.selectedSummary,
+      last_build: normalizeBuildJob(job),
+      available: job.status === "succeeded" ? true : state.environments.selectedSummary.available,
+    };
+    renderEnvironmentOverview();
+  }
   if (state.environments.selectedName === job.environment_name) {
     state.environments.selectedLastBuild = normalizeBuildJob(job);
     if (job.status === "succeeded") {
@@ -796,6 +912,7 @@ async function initialize() {
         method: "POST",
         body: JSON.stringify(collectEnvironmentPayload()),
       });
+      state.environments.selectedSummary = result;
       state.environments.selectedBuild = normalizeBuild(result.build);
       state.environments.selectedDetails = normalizeEnvironmentDetails(result);
       state.environments.selectedAvailable = Boolean(result.available);
@@ -803,6 +920,7 @@ async function initialize() {
       state.environments.selectedAgentPrompt = result.agent_prompt || "";
       state.environments.selectedAvailableBuildTargets = normalizeBuildTargets(result.available_build_targets);
       state.environments.selectedLastBuild = normalizeBuildJob(result.last_build);
+      renderEnvironmentOverview(result);
       environmentOutput.textContent = environmentStatusSummary(result);
       environmentYAML.textContent = result.yaml || "No YAML available.";
       showToast(`Environment ${result.name} saved.`, "success");

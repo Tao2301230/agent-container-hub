@@ -217,14 +217,22 @@ func (s *EnvironmentService) toResponse(ctx context.Context, environment *model.
 	} else {
 		info, available, err := inspectLocalImage(ctx, s.runtime, environment.ImageRef(), s.logger)
 		if err != nil {
-			return nil, err
-		}
-		response.Available = available
-		if available {
-			response.ImageMetadata = imageMetadataToResponse(runtime.ImageMetadata{
-				Ref:       info.Ref,
-				CreatedAt: info.CreatedAt,
-			})
+			if s.logger != nil {
+				s.logger.Warn("image inspect unavailable, returning environment without image metadata",
+					"environment", environment.Name,
+					"image", response.ImageRef,
+					"error", err,
+				)
+			}
+			response.Available = false
+		} else {
+			response.Available = available
+			if available {
+				response.ImageMetadata = imageMetadataToResponse(runtime.ImageMetadata{
+					Ref:       info.Ref,
+					CreatedAt: info.CreatedAt,
+				})
+			}
 		}
 	}
 	availableTargets, err := AvailableBuildTargets(s.configRoot, environment.Name)

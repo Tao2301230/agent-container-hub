@@ -318,6 +318,104 @@ func TestEnvironmentAgentPromptReturnsEmptyWhenUnset(t *testing.T) {
 	}
 }
 
+func TestEnvironmentUpsertSucceedsWhenRuntimeCannotInspectImage(t *testing.T) {
+	t.Parallel()
+
+	services, cleanup, fake := newTestServices(t)
+	defer cleanup()
+
+	fake.inspectImageErr = runtime.ErrRuntimeUnavailable
+
+	got, err := services.environments.Upsert(context.Background(), api.UpsertEnvironmentRequest{
+		Name:            "shell",
+		ImageRepository: "busybox",
+		ImageTag:        "latest",
+		Enabled:         true,
+		Build: model.BuildSpec{
+			Dockerfile: "FROM busybox:latest\n",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+	if got.Available {
+		t.Fatal("Upsert().Available = true, want false when inspect is unavailable")
+	}
+	if got.ImageMetadata != nil {
+		t.Fatalf("Upsert().ImageMetadata = %+v, want nil", got.ImageMetadata)
+	}
+
+	stored, err := services.environments.Get(context.Background(), "shell")
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if stored.Name != "shell" {
+		t.Fatalf("Get().Name = %q, want shell", stored.Name)
+	}
+}
+
+func TestEnvironmentGetReturnsNoImageMetadataWhenImageMissing(t *testing.T) {
+	t.Parallel()
+
+	services, cleanup, fake := newTestServices(t)
+	defer cleanup()
+
+	if _, err := services.environments.Upsert(context.Background(), api.UpsertEnvironmentRequest{
+		Name:            "shell",
+		ImageRepository: "busybox",
+		ImageTag:        "latest",
+		Enabled:         true,
+		Build: model.BuildSpec{
+			Dockerfile: "FROM busybox:latest\n",
+		},
+	}); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	fake.allowUnknownImages = false
+	got, err := services.environments.Get(context.Background(), "shell")
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if got.Available {
+		t.Fatal("Get().Available = true, want false when image is missing locally")
+	}
+	if got.ImageMetadata != nil {
+		t.Fatalf("Get().ImageMetadata = %+v, want nil", got.ImageMetadata)
+	}
+}
+
+func TestEnvironmentGetSucceedsWhenRuntimeCannotInspectImage(t *testing.T) {
+	t.Parallel()
+
+	services, cleanup, fake := newTestServices(t)
+	defer cleanup()
+
+	if _, err := services.environments.Upsert(context.Background(), api.UpsertEnvironmentRequest{
+		Name:            "shell",
+		ImageRepository: "busybox",
+		ImageTag:        "latest",
+		Enabled:         true,
+		Build: model.BuildSpec{
+			Dockerfile: "FROM busybox:latest\n",
+		},
+	}); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	fake.inspectImageErr = runtime.ErrRuntimeUnavailable
+	got, err := services.environments.Get(context.Background(), "shell")
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if got.Available {
+		t.Fatal("Get().Available = true, want false when inspect is unavailable")
+	}
+	if got.ImageMetadata != nil {
+		t.Fatalf("Get().ImageMetadata = %+v, want nil", got.ImageMetadata)
+	}
+}
+
 func TestCreateRejectsDisabledEnvironment(t *testing.T) {
 	t.Parallel()
 

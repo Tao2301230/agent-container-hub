@@ -73,6 +73,14 @@ function topmostOpenModal() {
   return modals[modals.length - 1] || null;
 }
 
+function canDismissModalOnBackdrop(backdrop) {
+  return backdrop?.dataset.closeOnBackdrop !== "false";
+}
+
+function canDismissModalOnEscape(backdrop) {
+  return backdrop?.dataset.closeOnEscape !== "false";
+}
+
 export function bindModalDismiss() {
   document.querySelectorAll("[data-close-modal]").forEach((button) => {
     button.addEventListener("click", () => closeModal(button.dataset.closeModal));
@@ -80,7 +88,7 @@ export function bindModalDismiss() {
 
   document.querySelectorAll(".modal-backdrop").forEach((backdrop) => {
     backdrop.addEventListener("click", (event) => {
-      if (event.target === backdrop) {
+      if (event.target === backdrop && canDismissModalOnBackdrop(backdrop)) {
         closeModal(backdrop.id);
       }
     });
@@ -91,7 +99,7 @@ export function bindModalDismiss() {
       return;
     }
     const backdrop = topmostOpenModal();
-    if (backdrop) {
+    if (backdrop && canDismissModalOnEscape(backdrop)) {
       closeModal(backdrop.id);
     }
   });
