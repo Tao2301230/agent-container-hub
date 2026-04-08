@@ -96,33 +96,46 @@ make test
 
 正式版本号由根目录 `VERSION` 单一管理，格式固定为 `vX.Y.Z`。
 
-构建当前架构的 Linux release bundle：
+主入口是程序 bundle release：
 
 ```bash
 make release
 ```
 
-或显式指定版本与架构：
+它等价于：
 
 ```bash
-make release VERSION=v0.1.0 ARCH=arm64
-make release VERSION=v0.1.0 ARCH=amd64
+make release-program
+```
+
+默认会一次产出 `darwin` 和 `windows` 两个平台的程序 bundle。
+
+构建镜像 bundle：
+
+```bash
+make release-image VERSION=v0.1.0
 ```
 
 产物输出到：
 
 ```text
-dist/release/agent-container-hub-vX.Y.Z-linux-<arch>.tar.gz
+dist/release/agent-container-hub-program-vX.Y.Z-darwin-<arch>.tar.gz
+dist/release/agent-container-hub-program-vX.Y.Z-windows-<arch>.tar.gz
+dist/release/agent-container-hub-image-vX.Y.Z-linux-<arch>.tar.gz
 ```
 
-bundle 解压后包含：
+program bundle 解压后包含：
 
-- `agent-container-hub` Linux 二进制
+- `agent-container-hub` 或 `agent-container-hub.exe`
 - `.env.example`
-- `start.sh` / `stop.sh`
-- `systemd/agent-container-hub.service`
+- `README.txt`
 - `configs/environments/` live config
 - `data/rootfs/` 与 `data/builds/` 空目录
+
+其中：
+
+- `darwin` bundle 包含 `start.sh` / `stop.sh`
+- `windows` bundle 包含 `release-scripts/windows/`
 
 更完整的发布设计见 [docs/versioned-release-bundle.md](./docs/versioned-release-bundle.md)。
 
@@ -504,7 +517,7 @@ build:
 
 ```bash
 make release VERSION=v0.1.0
-tar -xzf dist/release/agent-container-hub-v0.1.0-linux-<arch>.tar.gz
+tar -xzf dist/release/agent-container-hub-program-v0.1.0-darwin-<arch>.tar.gz
 cd agent-container-hub
 cp .env.example .env
 ./start.sh
