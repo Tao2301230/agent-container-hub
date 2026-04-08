@@ -23,6 +23,8 @@ const (
 	RootfsLabel      = "sandbox.rootfs"
 	CreatedAtLabel   = "sandbox.created_at"
 	DefaultMountPath = "/workspace"
+	LocalProviderName = "local"
+	LocalImageRef     = "local://host"
 )
 
 type ContainerState string
@@ -107,4 +109,8 @@ type Provider interface {
 	Inspect(context.Context, string) (ContainerInfo, error)
 	InspectImage(context.Context, string) (ImageInfo, error)
 	ListByLabel(context.Context, string, string) ([]ContainerInfo, error)
+}
+
+func IsLocalRuntime(name string) bool {
+	return name == LocalProviderName
 }

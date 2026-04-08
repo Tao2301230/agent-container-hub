@@ -29,6 +29,11 @@ require_release_tools() {
   command -v go >/dev/null 2>&1 || die "go is required"
 }
 
+require_image_tools() {
+  command -v docker >/dev/null 2>&1 || die "docker is required"
+  command -v gzip >/dev/null 2>&1 || die "gzip is required"
+}
+
 resolve_release_context() {
   VERSION="${VERSION:-$(cat "$REPO_ROOT/VERSION" 2>/dev/null || echo "dev")}"
   [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "VERSION must match vX.Y.Z (got: $VERSION)"
@@ -66,4 +71,41 @@ parse_program_targets() {
     validate_target_os "$target"
     printf '%s\n' "$target"
   done
+}
+
+image_target_os() {
+  printf 'linux\n'
+}
+
+image_tag() {
+  printf '%s:%s-%s-%s\n' "$APP_NAME" "$VERSION" "$(image_target_os)" "$ARCH"
+}
+
+image_archive_name() {
+  printf '%s-image-%s-%s-%s.tar.gz\n' "$APP_NAME" "$VERSION" "$(image_target_os)" "$ARCH"
+}
+
+image_bundle_name() {
+  printf '%s-image-bundle-%s-%s-%s.tar.gz\n' "$APP_NAME" "$VERSION" "$(image_target_os)" "$ARCH"
+}
+
+build_and_export_image_archive() {
+  local output_path="$1"
+  local target_os
+  local tag
+
+  target_os="$(image_target_os)"
+  tag="$(image_tag)"
+
+  mkdir -p "$(dirname "$output_path")"
+
+  echo "[release] image VERSION=$VERSION TARGET_OS=$target_os ARCH=$ARCH"
+
+  docker build \
+    --platform "${target_os}/${ARCH}" \
+    --build-arg VERSION="$VERSION" \
+    -t "$tag" \
+    .
+
+  docker save "$tag" | gzip -c >"$output_path"
 }

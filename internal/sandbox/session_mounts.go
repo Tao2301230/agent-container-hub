@@ -56,6 +56,13 @@ func (s *SessionService) buildSessionMounts(environmentMounts, requestMounts []m
 	if !callerProvidesWorkspace {
 		mounts = append(mounts, rootfsMount)
 	}
+	if runtime.IsLocalRuntime(s.runtime.Name()) {
+		for _, mount := range mounts {
+			if mount.Destination != runtime.DefaultMountPath {
+				return nil, false, fmt.Errorf("%w: local runtime only supports mount destination %s", ErrValidation, runtime.DefaultMountPath)
+			}
+		}
+	}
 	return mounts, callerProvidesWorkspace, nil
 }
 

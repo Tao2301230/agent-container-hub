@@ -64,17 +64,19 @@ func (s *SessionService) Create(ctx context.Context, req api.CreateSessionReques
 	if !environment.Enabled {
 		return nil, fmt.Errorf("%w: environment is disabled", ErrValidation)
 	}
-	available, err := inspectLocalImageAvailability(ctx, s.runtime, environment.ImageRef(), s.logger)
-	if err != nil {
-		s.logger.Error("image availability check failed",
-			"environment", environmentName,
-			"image", environment.ImageRef(),
-			"error", err,
-		)
-		return nil, err
-	}
-	if !available {
-		return nil, fmt.Errorf("%w: image %q not found locally", ErrValidation, environment.ImageRef())
+	if !runtime.IsLocalRuntime(s.runtime.Name()) {
+		available, err := inspectLocalImageAvailability(ctx, s.runtime, environment.ImageRef(), s.logger)
+		if err != nil {
+			s.logger.Error("image availability check failed",
+				"environment", environmentName,
+				"image", environment.ImageRef(),
+				"error", err,
+			)
+			return nil, err
+		}
+		if !available {
+			return nil, fmt.Errorf("%w: image %q not found locally", ErrValidation, environment.ImageRef())
+		}
 	}
 	if err := model.ValidateEnvMap(environment.DefaultEnv, "default_env"); err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrValidation, err)
@@ -133,10 +135,14 @@ func (s *SessionService) Create(ctx context.Context, req api.CreateSessionReques
 	}
 
 	cwd := sessionDefaultCwd(req.Cwd, environment.DefaultCwd)
+	imageRef := strings.TrimSpace(environment.ImageRef())
+	if runtime.IsLocalRuntime(s.runtime.Name()) && imageRef == "" {
+		imageRef = runtime.LocalImageRef
+	}
 
 	info, err := s.runtime.Create(ctx, runtime.CreateOptions{
 		Name:      sessionID,
-		Image:     environment.ImageRef(),
+		Image:     imageRef,
 		Cwd:       cwd,
 		Env:       model.CloneMap(environment.DefaultEnv),
 		Mounts:    mounts,
@@ -175,7 +181,7 @@ func (s *SessionService) Create(ctx context.Context, req api.CreateSessionReques
 		ID:              sessionID,
 		ContainerID:     info.ID,
 		EnvironmentName: environment.Name,
-		Image:           environment.ImageRef(),
+		Image:           imageRef,
 		DefaultCwd:      cwd,
 		RootfsPath:      rootfsPath,
 		Env:             model.CloneMap(environment.DefaultEnv),

@@ -16,19 +16,24 @@ type imageMetadataProvider interface {
 	ListImageMetadata(context.Context) (map[string]runtime.ImageMetadata, error)
 }
 
+type environmentRuntime interface {
+	imageInspector
+	Name() string
+}
+
 type EnvironmentService struct {
 	environments store.EnvironmentStore
 	configRoot   string
 	builds       interface {
 		LatestBuildJob(context.Context, string) (*api.BuildJobResponse, error)
 	}
-	runtime imageInspector
+	runtime environmentRuntime
 	logger  *slog.Logger
 }
 
 func NewEnvironmentService(configRoot string, environments store.EnvironmentStore, builds interface {
 	LatestBuildJob(context.Context, string) (*api.BuildJobResponse, error)
-}, imageRuntime imageInspector, logger *slog.Logger) *EnvironmentService {
+}, imageRuntime environmentRuntime, logger *slog.Logger) *EnvironmentService {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -46,10 +51,10 @@ func (s *EnvironmentService) Upsert(ctx context.Context, req api.UpsertEnvironme
 	if err := validateEnvironmentName(name); err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(req.ImageRepository) == "" {
+	if !runtime.IsLocalRuntime(s.runtime.Name()) && strings.TrimSpace(req.ImageRepository) == "" {
 		return nil, fmt.Errorf("%w: image_repository is required", ErrValidation)
 	}
-	if strings.TrimSpace(req.ImageTag) == "" {
+	if !runtime.IsLocalRuntime(s.runtime.Name()) && strings.TrimSpace(req.ImageTag) == "" {
 		return nil, fmt.Errorf("%w: image_tag is required", ErrValidation)
 	}
 	if err := model.ValidateEnvMap(req.DefaultEnv, "default_env"); err != nil {
@@ -211,27 +216,33 @@ func (s *EnvironmentService) toResponse(ctx context.Context, environment *model.
 		if metadata, ok := imageMetadata[response.ImageRef]; ok {
 			response.Available = true
 			response.ImageMetadata = imageMetadataToResponse(metadata)
+		} else if runtime.IsLocalRuntime(s.runtime.Name()) {
+			response.Available = true
 		} else {
 			response.Available = false
 		}
 	} else {
-		info, available, err := inspectLocalImage(ctx, s.runtime, environment.ImageRef(), s.logger)
-		if err != nil {
-			if s.logger != nil {
-				s.logger.Warn("image inspect unavailable, returning environment without image metadata",
-					"environment", environment.Name,
-					"image", response.ImageRef,
-					"error", err,
-				)
-			}
-			response.Available = false
+		if runtime.IsLocalRuntime(s.runtime.Name()) {
+			response.Available = true
 		} else {
-			response.Available = available
-			if available {
-				response.ImageMetadata = imageMetadataToResponse(runtime.ImageMetadata{
-					Ref:       info.Ref,
-					CreatedAt: info.CreatedAt,
-				})
+			info, available, err := inspectLocalImage(ctx, s.runtime, environment.ImageRef(), s.logger)
+			if err != nil {
+				if s.logger != nil {
+					s.logger.Warn("image inspect unavailable, returning environment without image metadata",
+						"environment", environment.Name,
+						"image", response.ImageRef,
+						"error", err,
+					)
+				}
+				response.Available = false
+			} else {
+				response.Available = available
+				if available {
+					response.ImageMetadata = imageMetadataToResponse(runtime.ImageMetadata{
+						Ref:       info.Ref,
+						CreatedAt: info.CreatedAt,
+					})
+				}
 			}
 		}
 	}

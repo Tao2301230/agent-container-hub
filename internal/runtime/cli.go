@@ -35,6 +35,9 @@ func NewAutoProvider(explicit string, logger *slog.Logger) (Provider, error) {
 		logger = slog.Default()
 	}
 	if explicit != "" {
+		if IsLocalRuntime(explicit) {
+			return NewLocalProvider(), nil
+		}
 		if _, err := exec.LookPath(explicit); err != nil {
 			return nil, fmt.Errorf("%w: %s", ErrRuntimeUnavailable, explicit)
 		}

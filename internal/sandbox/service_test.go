@@ -416,6 +416,114 @@ func TestEnvironmentGetSucceedsWhenRuntimeCannotInspectImage(t *testing.T) {
 	}
 }
 
+func TestEnvironmentUpsertAllowsMissingImageInLocalMode(t *testing.T) {
+	t.Parallel()
+
+	services, cleanup, fake := newTestServices(t)
+	defer cleanup()
+	fake.name = runtime.LocalProviderName
+
+	got, err := services.environments.Upsert(context.Background(), api.UpsertEnvironmentRequest{
+		Name:       "shell",
+		Enabled:    true,
+		DefaultCwd: runtime.DefaultMountPath,
+	})
+	if err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+	if !got.Available {
+		t.Fatal("Upsert().Available = false, want true")
+	}
+	if got.ImageRef != "" {
+		t.Fatalf("Upsert().ImageRef = %q, want empty", got.ImageRef)
+	}
+}
+
+func TestCreateSessionUsesLocalPlaceholderImage(t *testing.T) {
+	t.Parallel()
+
+	services, cleanup, fake := newTestServices(t)
+	defer cleanup()
+	fake.name = runtime.LocalProviderName
+	fake.inspectImageErr = runtime.ErrRuntimeUnavailable
+
+	if _, err := services.environments.Upsert(context.Background(), api.UpsertEnvironmentRequest{
+		Name:       "shell",
+		Enabled:    true,
+		DefaultCwd: runtime.DefaultMountPath,
+	}); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	created, err := services.sessions.Create(context.Background(), api.CreateSessionRequest{
+		SessionID:       "local-session",
+		EnvironmentName: "shell",
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if created.Image != runtime.LocalImageRef {
+		t.Fatalf("Create().Image = %q, want %q", created.Image, runtime.LocalImageRef)
+	}
+	if fake.lastCreate.Image != runtime.LocalImageRef {
+		t.Fatalf("runtime create image = %q, want %q", fake.lastCreate.Image, runtime.LocalImageRef)
+	}
+}
+
+func TestCreateSessionRejectsNonWorkspaceMountsInLocalMode(t *testing.T) {
+	t.Parallel()
+
+	services, cleanup, fake := newTestServices(t)
+	defer cleanup()
+	fake.name = runtime.LocalProviderName
+
+	skillsDir := t.TempDir()
+	if _, err := services.environments.Upsert(context.Background(), api.UpsertEnvironmentRequest{
+		Name:       "shell",
+		Enabled:    true,
+		DefaultCwd: runtime.DefaultMountPath,
+		Mounts: []model.Mount{{
+			Source:      skillsDir,
+			Destination: "/skills",
+		}},
+	}); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	_, err := services.sessions.Create(context.Background(), api.CreateSessionRequest{
+		SessionID:       "local-mounts",
+		EnvironmentName: "shell",
+	})
+	if !errors.Is(err, ErrValidation) {
+		t.Fatalf("Create() error = %v, want ErrValidation", err)
+	}
+}
+
+func TestLocalModeEnvironmentGetAlwaysAvailable(t *testing.T) {
+	t.Parallel()
+
+	services, cleanup, fake := newTestServices(t)
+	defer cleanup()
+	fake.name = runtime.LocalProviderName
+	fake.inspectImageErr = runtime.ErrRuntimeUnavailable
+
+	if _, err := services.environments.Upsert(context.Background(), api.UpsertEnvironmentRequest{
+		Name:       "shell",
+		Enabled:    true,
+		DefaultCwd: runtime.DefaultMountPath,
+	}); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	got, err := services.environments.Get(context.Background(), "shell")
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if !got.Available {
+		t.Fatal("Get().Available = false, want true")
+	}
+}
+
 func TestCreateRejectsDisabledEnvironment(t *testing.T) {
 	t.Parallel()
 
@@ -979,6 +1087,27 @@ func TestBuildEnvironmentPreservesFailedBuild(t *testing.T) {
 	}
 	if job.Status != string(model.BuildJobStatusFailed) || job.Error == "" {
 		t.Fatalf("BuildEnvironment() = %+v, want failed job with error", job)
+	}
+}
+
+func TestBuildEnvironmentRejectedInLocalMode(t *testing.T) {
+	t.Parallel()
+
+	services, cleanup, fake := newTestServices(t)
+	defer cleanup()
+	fake.name = runtime.LocalProviderName
+
+	if _, err := services.environments.Upsert(context.Background(), api.UpsertEnvironmentRequest{
+		Name:       "shell",
+		Enabled:    true,
+		DefaultCwd: runtime.DefaultMountPath,
+	}); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	_, err := services.builds.StartBuildJob(context.Background(), "shell", api.BuildEnvironmentRequest{})
+	if !errors.Is(err, ErrValidation) {
+		t.Fatalf("StartBuildJob() error = %v, want ErrValidation", err)
 	}
 }
 
@@ -2389,6 +2518,27 @@ func TestReconcileExistingImagesCreatesRecordWhenEnvironmentMovesToNewImageRef(t
 	}
 }
 
+func TestReconcileExistingImagesSkipsLocalRuntime(t *testing.T) {
+	t.Parallel()
+
+	services, cleanup, fake := newTestServices(t)
+	defer cleanup()
+	fake.name = runtime.LocalProviderName
+	fake.inspectImageErr = runtime.ErrRuntimeUnavailable
+
+	if _, err := services.environments.Upsert(context.Background(), api.UpsertEnvironmentRequest{
+		Name:       "shell",
+		Enabled:    true,
+		DefaultCwd: runtime.DefaultMountPath,
+	}); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	if err := services.builds.ReconcileExistingImages(context.Background()); err != nil {
+		t.Fatalf("ReconcileExistingImages() error = %v", err)
+	}
+}
+
 type testServices struct {
 	store        store.AppStore
 	envs         store.EnvironmentStore
@@ -2463,6 +2613,7 @@ func newTestServicesWithLogger(t *testing.T, configure func(*config.Config), log
 
 type fakeRuntime struct {
 	mu                   sync.Mutex
+	name                 string
 	containers           map[string]runtime.ContainerInfo
 	images               map[string]runtime.ImageInfo
 	imageMetadata        map[string]runtime.ImageMetadata
@@ -2487,7 +2638,12 @@ type fakeRuntime struct {
 	buildContinue        chan struct{}
 }
 
-func (f *fakeRuntime) Name() string { return "fake" }
+func (f *fakeRuntime) Name() string {
+	if f.name != "" {
+		return f.name
+	}
+	return "fake"
+}
 
 func (f *fakeRuntime) Create(_ context.Context, opts runtime.CreateOptions) (runtime.ContainerInfo, error) {
 	f.mu.Lock()

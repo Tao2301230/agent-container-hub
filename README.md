@@ -1,6 +1,6 @@
 # agent-container-hub
 
-`agent-container-hub` 是一个基于宿主机 `docker` / `podman` CLI 的容器会话与环境管理服务。
+`agent-container-hub` 是一个基于宿主机 `docker` / `podman` CLI 的容器会话与环境管理服务，也支持 `ENGINE=local` 时将宿主机伪装成虚拟沙箱后端。
 它同时提供：
 
 - 会话管理：创建、执行、停止、查询长生命周期 sandbox session
@@ -71,7 +71,7 @@ cp .env.example .env
 - `CONFIG_ROOT=./configs`
 - `ROOTFS_ROOT=./data/rootfs`
 - `BUILD_ROOT=./data/builds`
-- `ENGINE=` 留空自动探测，或显式指定 `docker` / `podman`
+- `ENGINE=` 留空自动探测，或显式指定 `docker` / `podman` / `local`
 
 启动：
 
@@ -116,12 +116,14 @@ make release-program
 make release-image VERSION=v0.1.0
 ```
 
+它会把离线镜像文件和部署配置一起组装进一个总包。
+
 产物输出到：
 
 ```text
 dist/release/agent-container-hub-program-vX.Y.Z-darwin-<arch>.tar.gz
 dist/release/agent-container-hub-program-vX.Y.Z-windows-<arch>.tar.gz
-dist/release/agent-container-hub-image-vX.Y.Z-linux-<arch>.tar.gz
+dist/release/agent-container-hub-image-bundle-vX.Y.Z-linux-<arch>.tar.gz
 ```
 
 program bundle 解压后包含：
@@ -136,6 +138,23 @@ program bundle 解压后包含：
 
 - `darwin` bundle 包含 `start.sh` / `stop.sh`
 - `windows` bundle 包含 `release-scripts/windows/`
+
+image bundle 解压后包含：
+
+- `.env.example`
+- `README.txt`
+- `load-image.sh`
+- `images/agent-container-hub-image-vX.Y.Z-linux-<arch>.tar.gz`
+- `configs/environments/` live config
+- `data/rootfs/` 与 `data/builds/` 空目录
+
+导入镜像：
+
+```bash
+tar -xzf dist/release/agent-container-hub-image-bundle-v0.1.0-linux-<arch>.tar.gz
+cd agent-container-hub
+./load-image.sh
+```
 
 更完整的发布设计见 [docs/versioned-release-bundle.md](./docs/versioned-release-bundle.md)。
 
@@ -168,7 +187,7 @@ program bundle 解压后包含：
   - 可选的会话挂载模板目录；未配置时模板接口返回空模板
 - `ENGINE`
   - 默认值：自动探测
-  - 可选值：`docker`、`podman`
+  - 可选值：`docker`、`podman`、`local`
 - `DEFAULT_COMMAND_TIMEOUT`
   - 默认值：`30s`
   - execute 请求未显式提供 `timeout_ms` 时的默认超时
@@ -206,7 +225,7 @@ BUILD_ROOT=./data/builds
 # Optional root directory that provides session mount templates for the UI/API.
 SESSION_MOUNT_TEMPLATE_ROOT=
 
-# Container engine: docker or podman. Leave empty for auto-detection.
+# Container engine: docker, podman, or local. Leave empty for auto-detection.
 ENGINE=
 
 # Default timeout used when execute requests omit timeout_ms.
@@ -221,6 +240,10 @@ ENABLE_EXEC_LOG_PERSIST=false
 # Max bytes stored per stdout/stderr field in session_executions.
 EXEC_LOG_MAX_OUTPUT_BYTES=65536
 ```
+
+`ENGINE=local` 时，会保留现有 session/create/execute/stop API，但命令会直接在宿主机执行。
+这个模式适合把本机伪装成智能体平台可调用的 sandbox backend，不提供容器级隔离，也不支持镜像构建。
+建议仅绑定 `127.0.0.1`，并配合独立系统用户、专用工作目录和文件权限控制使用。
 
 ## API 概览
 
