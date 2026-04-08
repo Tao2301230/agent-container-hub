@@ -317,7 +317,11 @@ func (s *Server) handleExecuteSession(w http.ResponseWriter, r *http.Request) {
 		s.writeMappedError(w, err)
 		return
 	}
-	writePlainText(w, http.StatusOK, formatExecuteResponse(response))
+	if executeSucceeded(response) {
+		writePlainText(w, http.StatusOK, response.Stdout)
+		return
+	}
+	writeJSON(w, http.StatusOK, executeErrorResponse(response))
 }
 
 func (s *Server) handleStopSession(w http.ResponseWriter, r *http.Request) {
@@ -593,25 +597,21 @@ func writePlainText(w http.ResponseWriter, status int, payload string) {
 	_, _ = io.WriteString(w, payload)
 }
 
-func formatExecuteResponse(response *api.ExecuteSessionResponse) string {
-	if response == nil {
-		return ""
-	}
-	if response.ExitCode == 0 && response.Stderr == "" {
-		return response.Stdout
-	}
+func executeSucceeded(response *api.ExecuteSessionResponse) bool {
+	return response != nil && response.ExitCode == 0 && response.Stderr == ""
+}
 
-	body := response.Stderr
-	if body == "" {
-		body = response.Stdout
+func executeErrorResponse(response *api.ExecuteSessionResponse) api.ExecuteSessionErrorResponse {
+	if response == nil {
+		return api.ExecuteSessionErrorResponse{Mode: "sandbox"}
 	}
-	if body == "" {
-		body = "command failed"
+	return api.ExecuteSessionErrorResponse{
+		ExitCode:         response.ExitCode,
+		Mode:             "sandbox",
+		WorkingDirectory: response.WorkingDirectory,
+		Stdout:           response.Stdout,
+		Stderr:           response.Stderr,
 	}
-	if !strings.HasSuffix(body, "\n") {
-		body += "\n"
-	}
-	return body + fmt.Sprintf("exitCode: %d", response.ExitCode)
 }
 
 func writeSSEEvent(w http.ResponseWriter, event string, payload any) {

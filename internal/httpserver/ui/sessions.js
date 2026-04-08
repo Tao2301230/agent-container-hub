@@ -795,13 +795,42 @@ function renderQuickExecuteResult(payload) {
     quickExecuteContent.innerHTML = `<div class="empty">${escapeHTML(payload.error)}</div>`;
     return;
   }
+  if (typeof payload.response === "string") {
+    quickExecuteContent.innerHTML = `
+      <div class="detail-grid">
+        <div class="detail-box"><div class="meta">Session</div><strong>${escapeHTML(payload.sessionID)}</strong></div>
+        <div class="detail-box"><div class="meta">Environment</div><strong>${escapeHTML(payload.environmentName)}</strong></div>
+        <div class="detail-box"><div class="meta">Command</div><strong>${escapeHTML(payload.preset.command || "-")}</strong></div>
+        <div class="detail-box"><div class="meta">Cwd</div><strong>${escapeHTML(payload.preset.cwd || "(session default)")}</strong></div>
+        <div class="detail-box"><div class="meta">Timeout</div><strong>${escapeHTML(payload.preset.timeout_ms || 0)} ms</strong></div>
+      </div>
+
+      <div class="stack">
+        <div>
+          <h3>Args</h3>
+        </div>
+        <pre>${escapeHTML(JSON.stringify(payload.preset.args || [], null, 2))}</pre>
+      </div>
+
+      <div class="stack">
+        <div>
+          <h3>Output</h3>
+        </div>
+        <pre>${escapeHTML(payload.response || "")}</pre>
+      </div>
+    `;
+    return;
+  }
+
   quickExecuteContent.innerHTML = `
     <div class="detail-grid">
       <div class="detail-box"><div class="meta">Session</div><strong>${escapeHTML(payload.sessionID)}</strong></div>
       <div class="detail-box"><div class="meta">Environment</div><strong>${escapeHTML(payload.environmentName)}</strong></div>
       <div class="detail-box"><div class="meta">Command</div><strong>${escapeHTML(payload.preset.command || "-")}</strong></div>
-      <div class="detail-box"><div class="meta">Cwd</div><strong>${escapeHTML(payload.preset.cwd || "(session default)")}</strong></div>
+      <div class="detail-box"><div class="meta">Cwd</div><strong>${escapeHTML(payload.response.workingDirectory || payload.preset.cwd || "(session default)")}</strong></div>
       <div class="detail-box"><div class="meta">Timeout</div><strong>${escapeHTML(payload.preset.timeout_ms || 0)} ms</strong></div>
+      <div class="detail-box"><div class="meta">Mode</div><strong>${escapeHTML(payload.response.mode || "-")}</strong></div>
+      <div class="detail-box"><div class="meta">Exit Code</div><strong>${escapeHTML(payload.response.exitCode)}</strong></div>
     </div>
 
     <div class="stack">
@@ -813,9 +842,16 @@ function renderQuickExecuteResult(payload) {
 
     <div class="stack">
       <div>
-        <h3>Output</h3>
+        <h3>Stdout</h3>
       </div>
-      <pre>${escapeHTML(payload.response || "")}</pre>
+      <pre>${escapeHTML(payload.response.stdout || "")}</pre>
+    </div>
+
+    <div class="stack">
+      <div>
+        <h3>Stderr</h3>
+      </div>
+      <pre>${escapeHTML(payload.response.stderr || "")}</pre>
     </div>
   `;
 }

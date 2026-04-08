@@ -282,16 +282,21 @@ curl -X POST http://127.0.0.1:11960/api/sessions/demo-shell/execute \
 hello
 ```
 
-当命令执行完成时，`POST /api/sessions/{id}/execute` 总是返回 `HTTP 200` 和 `text/plain; charset=utf-8`：
+当命令执行完成时，`POST /api/sessions/{id}/execute` 总是返回 `HTTP 200`：
 
-- 如果 bash 执行成功且没有 stderr，响应 body 就是原始 `stdout`
-- 如果 bash 执行返回非零 exit code，或产生了 stderr，响应 body 会改为纯文本错误格式
+- 如果 bash 执行成功且没有 stderr，响应 body 会是 `text/plain; charset=utf-8`，内容就是原始 `stdout`
+- 如果 bash 执行返回非零 exit code，或产生了 stderr，响应 body 会改为 `application/json`
 
 错误响应示例：
 
-```text
-permission denied
-exitCode: 17
+```json
+{
+  "exitCode": 17,
+  "mode": "sandbox",
+  "workingDirectory": "/workspace",
+  "stdout": "",
+  "stderr": "permission denied\n"
+}
 ```
 
 结构化的 `stdout/stderr/exit_code/timed_out/duration_ms/started_at/finished_at` 仍然会保留在 execute 日志里，可通过 `/api/sessions/{id}/executions` 查询。

@@ -22,14 +22,23 @@ type ExecuteSessionRequest struct {
 }
 
 type ExecuteSessionResponse struct {
-	SessionID  string    `json:"session_id"`
-	ExitCode   int       `json:"exit_code"`
-	Stdout     string    `json:"stdout"`
-	Stderr     string    `json:"stderr"`
-	TimedOut   bool      `json:"timed_out"`
-	DurationMS int64     `json:"duration_ms"`
-	StartedAt  time.Time `json:"started_at"`
-	FinishedAt time.Time `json:"finished_at"`
+	SessionID        string    `json:"session_id"`
+	ExitCode         int       `json:"exit_code"`
+	Stdout           string    `json:"stdout"`
+	Stderr           string    `json:"stderr"`
+	WorkingDirectory string    `json:"-"`
+	TimedOut         bool      `json:"timed_out"`
+	DurationMS       int64     `json:"duration_ms"`
+	StartedAt        time.Time `json:"started_at"`
+	FinishedAt       time.Time `json:"finished_at"`
+}
+
+type ExecuteSessionErrorResponse struct {
+	ExitCode         int    `json:"exitCode"`
+	Mode             string `json:"mode"`
+	WorkingDirectory string `json:"workingDirectory"`
+	Stdout           string `json:"stdout"`
+	Stderr           string `json:"stderr"`
 }
 
 type SessionExecutionResponse struct {

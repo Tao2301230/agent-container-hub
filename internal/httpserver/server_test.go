@@ -805,7 +805,7 @@ func TestExecuteEndpointReturnsConflictWhenContainerStopped(t *testing.T) {
 	}
 }
 
-func TestExecuteEndpointReturnsPlainTextForCommandFailure(t *testing.T) {
+func TestExecuteEndpointReturnsJSONForCommandFailure(t *testing.T) {
 	t.Parallel()
 
 	handler, _, fake := newTestHandlerWithRuntime(t, "")
@@ -830,14 +830,14 @@ func TestExecuteEndpointReturnsPlainTextForCommandFailure(t *testing.T) {
 		EnvironmentName: "shell",
 	}, http.StatusOK, "")
 
-	body, contentType := doText(t, handler, http.MethodPost, "/api/sessions/failed-http-session/execute", api.ExecuteSessionRequest{
+	body, contentType := doJSONResponse[api.ExecuteSessionErrorResponse](t, handler, http.MethodPost, "/api/sessions/failed-http-session/execute", api.ExecuteSessionRequest{
 		Command: "pwd",
 	}, http.StatusOK, "")
-	if body != "permission denied\nexitCode: 17" {
-		t.Fatalf("execute body = %q, want stderr plus exitCode", body)
+	if body.ExitCode != 17 || body.Mode != "sandbox" || body.WorkingDirectory != runtime.DefaultMountPath || body.Stdout != "" || body.Stderr != "permission denied\n" {
+		t.Fatalf("execute body = %+v, want structured command failure", body)
 	}
-	if contentType != "text/plain; charset=utf-8" {
-		t.Fatalf("execute content-type = %q, want text/plain; charset=utf-8", contentType)
+	if contentType != "application/json" {
+		t.Fatalf("execute content-type = %q, want application/json", contentType)
 	}
 }
 
@@ -866,15 +866,18 @@ func TestExecuteEndpointFallsBackToStdoutForCommandFailure(t *testing.T) {
 		EnvironmentName: "shell",
 	}, http.StatusOK, "")
 
-	body, _ := doText(t, handler, http.MethodPost, "/api/sessions/stdout-failed-http-session/execute", api.ExecuteSessionRequest{
+	body, contentType := doJSONResponse[api.ExecuteSessionErrorResponse](t, handler, http.MethodPost, "/api/sessions/stdout-failed-http-session/execute", api.ExecuteSessionRequest{
 		Command: "pwd",
 	}, http.StatusOK, "")
-	if body != "fallback output\nexitCode: 9" {
-		t.Fatalf("execute body = %q, want stdout fallback plus exitCode", body)
+	if body.ExitCode != 9 || body.Mode != "sandbox" || body.WorkingDirectory != runtime.DefaultMountPath || body.Stdout != "fallback output" || body.Stderr != "" {
+		t.Fatalf("execute body = %+v, want stdout fallback in JSON command failure", body)
+	}
+	if contentType != "application/json" {
+		t.Fatalf("execute content-type = %q, want application/json", contentType)
 	}
 }
 
-func TestExecuteEndpointTreatsStderrAsPlainTextFailure(t *testing.T) {
+func TestExecuteEndpointTreatsStderrAsJSONFailure(t *testing.T) {
 	t.Parallel()
 
 	handler, _, fake := newTestHandlerWithRuntime(t, "")
@@ -899,11 +902,11 @@ func TestExecuteEndpointTreatsStderrAsPlainTextFailure(t *testing.T) {
 		EnvironmentName: "shell",
 	}, http.StatusOK, "")
 
-	body, _ := doText(t, handler, http.MethodPost, "/api/sessions/stderr-http-session/execute", api.ExecuteSessionRequest{
+	body, _ := doJSONResponse[api.ExecuteSessionErrorResponse](t, handler, http.MethodPost, "/api/sessions/stderr-http-session/execute", api.ExecuteSessionRequest{
 		Command: "pwd",
 	}, http.StatusOK, "")
-	if body != "warning\nexitCode: 0" {
-		t.Fatalf("execute body = %q, want stderr plus exitCode for zero exit", body)
+	if body.ExitCode != 0 || body.Mode != "sandbox" || body.WorkingDirectory != runtime.DefaultMountPath || body.Stdout != "" || body.Stderr != "warning\n" {
+		t.Fatalf("execute body = %+v, want stderr JSON failure for zero exit", body)
 	}
 }
 
@@ -931,11 +934,45 @@ func TestExecuteEndpointUsesDefaultFailureMessageWhenOutputIsEmpty(t *testing.T)
 		EnvironmentName: "shell",
 	}, http.StatusOK, "")
 
-	body, _ := doText(t, handler, http.MethodPost, "/api/sessions/empty-http-session/execute", api.ExecuteSessionRequest{
+	body, _ := doJSONResponse[api.ExecuteSessionErrorResponse](t, handler, http.MethodPost, "/api/sessions/empty-http-session/execute", api.ExecuteSessionRequest{
 		Command: "pwd",
 	}, http.StatusOK, "")
-	if body != "command failed\nexitCode: 1" {
-		t.Fatalf("execute body = %q, want default failure message plus exitCode", body)
+	if body.ExitCode != 1 || body.Mode != "sandbox" || body.WorkingDirectory != runtime.DefaultMountPath || body.Stdout != "" || body.Stderr != "" {
+		t.Fatalf("execute body = %+v, want empty output JSON failure", body)
+	}
+}
+
+func TestExecuteEndpointReturnsEffectiveWorkingDirectoryInJSONFailure(t *testing.T) {
+	t.Parallel()
+
+	handler, _, fake := newTestHandlerWithRuntime(t, "")
+	fake.execResult = runtime.ExecResult{
+		ExitCode:   23,
+		Stderr:     "permission denied\n",
+		StartedAt:  time.Date(2026, time.March, 17, 12, 38, 34, 0, time.UTC),
+		FinishedAt: time.Date(2026, time.March, 17, 12, 38, 34, 95*int(time.Millisecond), time.UTC),
+	}
+
+	_ = doJSON[api.EnvironmentResponse](t, handler, http.MethodPost, "/api/environments", api.UpsertEnvironmentRequest{
+		Name:            "shell",
+		ImageRepository: "busybox",
+		ImageTag:        "latest",
+		Enabled:         true,
+		Build: model.BuildSpec{
+			Dockerfile: "FROM busybox:latest\n",
+		},
+	}, http.StatusOK, "")
+	_ = doJSON[api.CreateSessionResponse](t, handler, http.MethodPost, "/api/sessions/create", api.CreateSessionRequest{
+		SessionID:       "cwd-http-session",
+		EnvironmentName: "shell",
+	}, http.StatusOK, "")
+
+	body, _ := doJSONResponse[api.ExecuteSessionErrorResponse](t, handler, http.MethodPost, "/api/sessions/cwd-http-session/execute", api.ExecuteSessionRequest{
+		Command: "pwd",
+		Cwd:     "/tmp/custom",
+	}, http.StatusOK, "")
+	if body.WorkingDirectory != "/tmp/custom" {
+		t.Fatalf("execute workingDirectory = %q, want /tmp/custom", body.WorkingDirectory)
 	}
 }
 
@@ -1492,6 +1529,34 @@ func doText(t *testing.T, handler http.Handler, method, path string, payload any
 		t.Fatalf("%s %s status = %d, want %d, body = %s", method, path, recorder.Code, wantStatus, recorder.Body.String())
 	}
 	return recorder.Body.String(), recorder.Header().Get("Content-Type")
+}
+
+func doJSONResponse[T any](t *testing.T, handler http.Handler, method, path string, payload any, wantStatus int, bearer string) (T, string) {
+	t.Helper()
+
+	var body bytes.Buffer
+	if payload != nil {
+		if err := json.NewEncoder(&body).Encode(payload); err != nil {
+			t.Fatalf("json.Encode() error = %v", err)
+		}
+	}
+	req := httptest.NewRequest(method, path, &body)
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+	if recorder.Code != wantStatus {
+		t.Fatalf("%s %s status = %d, want %d, body = %s", method, path, recorder.Code, wantStatus, recorder.Body.String())
+	}
+	var result T
+	if err := json.NewDecoder(recorder.Body).Decode(&result); err != nil {
+		t.Fatalf("json.Decode() error = %v", err)
+	}
+	return result, recorder.Header().Get("Content-Type")
 }
 
 func newTestHandler(t *testing.T, authToken string) http.Handler {

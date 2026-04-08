@@ -269,7 +269,7 @@ func (s *SessionService) Execute(ctx context.Context, sessionID string, req api.
 		return nil, err
 	}
 
-	response := executeResponse(sessionID, result)
+	response := executeResponse(sessionID, execCwd, result)
 	if s.cfg.EnableExecLogPersist {
 		execution := executionFromResult(sessionID, req, execCwd, result, s.cfg.ExecLogMaxOutputBytes)
 		if err := s.store.SaveSessionExecution(ctx, execution); err != nil {

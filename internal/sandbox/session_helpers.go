@@ -57,16 +57,17 @@ func generateID() (string, error) {
 	return hex.EncodeToString(buf), nil
 }
 
-func executeResponse(sessionID string, result runtime.ExecResult) *api.ExecuteSessionResponse {
+func executeResponse(sessionID, execCwd string, result runtime.ExecResult) *api.ExecuteSessionResponse {
 	return &api.ExecuteSessionResponse{
-		SessionID:  sessionID,
-		ExitCode:   result.ExitCode,
-		Stdout:     result.Stdout,
-		Stderr:     result.Stderr,
-		TimedOut:   result.TimedOut,
-		DurationMS: durationMilliseconds(result.StartedAt, result.FinishedAt),
-		StartedAt:  result.StartedAt,
-		FinishedAt: result.FinishedAt,
+		SessionID:        sessionID,
+		ExitCode:         result.ExitCode,
+		Stdout:           result.Stdout,
+		Stderr:           result.Stderr,
+		WorkingDirectory: execCwd,
+		TimedOut:         result.TimedOut,
+		DurationMS:       durationMilliseconds(result.StartedAt, result.FinishedAt),
+		StartedAt:        result.StartedAt,
+		FinishedAt:       result.FinishedAt,
 	}
 }
 
