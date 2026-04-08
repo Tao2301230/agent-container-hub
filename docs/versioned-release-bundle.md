@@ -72,6 +72,11 @@ dist/release/agent-container-hub-program-vX.Y.Z-windows-<arch>.tar.gz
 - `windows` bundle 使用 `.exe`，并包含 `release-scripts/windows/`
 - 只有显式指定 `PROGRAM_TARGETS=linux` 时才会带 `systemd/agent-container-hub.service`
 
+仓库内的 release 静态资产统一维护在 `scripts/release-assets/`：
+- `scripts/release-assets/program/`：program bundle 资产
+- `scripts/release-assets/image-bundle/`：image bundle 资产
+- `scripts/release-windows-package.ps1`：Windows 打包入口
+
 ### 3.3 常见用法
 
 ```bash

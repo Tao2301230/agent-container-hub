@@ -158,6 +158,8 @@ cd agent-container-hub
 
 更完整的发布设计见 [docs/versioned-release-bundle.md](./docs/versioned-release-bundle.md)。
 
+仓库内 release 静态资产统一收口在 `scripts/release-assets/`，其中 program bundle 资产位于 `scripts/release-assets/program/`，Windows 的仓库内打包入口位于 `scripts/release-windows-package.ps1`。
+
 ## 配置
 
 项目只使用环境变量配置。

@@ -3,8 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-RELEASE_ASSETS_DIR="$SCRIPT_DIR/release-assets"
-WINDOWS_RELEASE_SCRIPTS_DIR="$REPO_ROOT/release-scripts/windows"
+PROGRAM_RELEASE_ASSETS_DIR="$SCRIPT_DIR/release-assets/program"
 
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/release-common.sh"
@@ -47,23 +46,23 @@ build_program_bundle() {
 
   echo "[release] assembling program bundle for $target_os..."
   cp "$REPO_ROOT/.env.example" "$bundle_root/.env.example"
-  cp "$RELEASE_ASSETS_DIR/README.txt" "$bundle_root/README.txt"
+  cp "$PROGRAM_RELEASE_ASSETS_DIR/README.txt" "$bundle_root/README.txt"
 
   if [[ "$target_os" == "windows" ]]; then
     mkdir -p "$bundle_root/release-scripts/windows"
-    cp "$WINDOWS_RELEASE_SCRIPTS_DIR/start.ps1" "$bundle_root/release-scripts/windows/start.ps1"
-    cp "$WINDOWS_RELEASE_SCRIPTS_DIR/stop.ps1" "$bundle_root/release-scripts/windows/stop.ps1"
-    cp "$WINDOWS_RELEASE_SCRIPTS_DIR/start.cmd" "$bundle_root/release-scripts/windows/start.cmd"
-    cp "$WINDOWS_RELEASE_SCRIPTS_DIR/stop.cmd" "$bundle_root/release-scripts/windows/stop.cmd"
+    cp "$PROGRAM_RELEASE_ASSETS_DIR/windows/start.ps1" "$bundle_root/release-scripts/windows/start.ps1"
+    cp "$PROGRAM_RELEASE_ASSETS_DIR/windows/stop.ps1" "$bundle_root/release-scripts/windows/stop.ps1"
+    cp "$PROGRAM_RELEASE_ASSETS_DIR/windows/start.cmd" "$bundle_root/release-scripts/windows/start.cmd"
+    cp "$PROGRAM_RELEASE_ASSETS_DIR/windows/stop.cmd" "$bundle_root/release-scripts/windows/stop.cmd"
   else
-    cp "$RELEASE_ASSETS_DIR/start.sh" "$bundle_root/start.sh"
-    cp "$RELEASE_ASSETS_DIR/stop.sh" "$bundle_root/stop.sh"
+    cp "$PROGRAM_RELEASE_ASSETS_DIR/unix/start.sh" "$bundle_root/start.sh"
+    cp "$PROGRAM_RELEASE_ASSETS_DIR/unix/stop.sh" "$bundle_root/stop.sh"
     chmod +x "$bundle_root/$binary_name" "$bundle_root/start.sh" "$bundle_root/stop.sh"
   fi
 
   if [[ "$target_os" == "linux" ]]; then
     mkdir -p "$bundle_root/systemd"
-    cp "$RELEASE_ASSETS_DIR/systemd/agent-container-hub.service" "$bundle_root/systemd/agent-container-hub.service"
+    cp "$PROGRAM_RELEASE_ASSETS_DIR/linux/systemd/agent-container-hub.service" "$bundle_root/systemd/agent-container-hub.service"
   fi
 
   tar --exclude='.DS_Store' -C "$REPO_ROOT/configs" -cf - environments | tar -C "$bundle_root/configs" -xf -
