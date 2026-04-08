@@ -24,9 +24,11 @@ export async function api(path, options = {}) {
   }
 
   const text = await response.text();
-  const data = text ? JSON.parse(text) : null;
+  const contentType = response.headers.get("Content-Type") || "";
+  const isJSON = contentType.includes("application/json");
+  const data = isJSON ? (text ? JSON.parse(text) : null) : text;
   if (!response.ok) {
-    throw new Error(data?.error || `request failed: ${response.status}`);
+    throw new Error((isJSON ? data?.error : text) || `request failed: ${response.status}`);
   }
   return data;
 }

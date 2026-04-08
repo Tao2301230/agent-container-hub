@@ -60,14 +60,14 @@ func TestSessionEnvironmentAndUIEndpoints(t *testing.T) {
 		t.Fatalf("createResp.DurationMS = %d, want non-negative", createResp.DurationMS)
 	}
 
-	executeResp := doJSON[api.ExecuteSessionResponse](t, handler, http.MethodPost, "/api/sessions/http-session/execute", api.ExecuteSessionRequest{
+	executeResp, contentType := doText(t, handler, http.MethodPost, "/api/sessions/http-session/execute", api.ExecuteSessionRequest{
 		Command: "pwd",
 	}, http.StatusOK, "")
-	if executeResp.Stdout != "ok" {
-		t.Fatalf("executeResp.Stdout = %q, want ok", executeResp.Stdout)
+	if executeResp != "ok" {
+		t.Fatalf("executeResp = %q, want ok", executeResp)
 	}
-	if executeResp.DurationMS != 95 {
-		t.Fatalf("executeResp.DurationMS = %d, want 95", executeResp.DurationMS)
+	if contentType != "text/plain; charset=utf-8" {
+		t.Fatalf("execute content-type = %q, want text/plain; charset=utf-8", contentType)
 	}
 
 	sessions := doJSON[[]api.SessionResponse](t, handler, http.MethodGet, "/api/sessions", nil, http.StatusOK, "")
@@ -805,6 +805,140 @@ func TestExecuteEndpointReturnsConflictWhenContainerStopped(t *testing.T) {
 	}
 }
 
+func TestExecuteEndpointReturnsPlainTextForCommandFailure(t *testing.T) {
+	t.Parallel()
+
+	handler, _, fake := newTestHandlerWithRuntime(t, "")
+	fake.execResult = runtime.ExecResult{
+		ExitCode:   17,
+		Stderr:     "permission denied\n",
+		StartedAt:  time.Date(2026, time.March, 17, 12, 38, 34, 0, time.UTC),
+		FinishedAt: time.Date(2026, time.March, 17, 12, 38, 34, 95*int(time.Millisecond), time.UTC),
+	}
+
+	_ = doJSON[api.EnvironmentResponse](t, handler, http.MethodPost, "/api/environments", api.UpsertEnvironmentRequest{
+		Name:            "shell",
+		ImageRepository: "busybox",
+		ImageTag:        "latest",
+		Enabled:         true,
+		Build: model.BuildSpec{
+			Dockerfile: "FROM busybox:latest\n",
+		},
+	}, http.StatusOK, "")
+	_ = doJSON[api.CreateSessionResponse](t, handler, http.MethodPost, "/api/sessions/create", api.CreateSessionRequest{
+		SessionID:       "failed-http-session",
+		EnvironmentName: "shell",
+	}, http.StatusOK, "")
+
+	body, contentType := doText(t, handler, http.MethodPost, "/api/sessions/failed-http-session/execute", api.ExecuteSessionRequest{
+		Command: "pwd",
+	}, http.StatusOK, "")
+	if body != "permission denied\nexitCode: 17" {
+		t.Fatalf("execute body = %q, want stderr plus exitCode", body)
+	}
+	if contentType != "text/plain; charset=utf-8" {
+		t.Fatalf("execute content-type = %q, want text/plain; charset=utf-8", contentType)
+	}
+}
+
+func TestExecuteEndpointFallsBackToStdoutForCommandFailure(t *testing.T) {
+	t.Parallel()
+
+	handler, _, fake := newTestHandlerWithRuntime(t, "")
+	fake.execResult = runtime.ExecResult{
+		ExitCode:   9,
+		Stdout:     "fallback output",
+		StartedAt:  time.Date(2026, time.March, 17, 12, 38, 34, 0, time.UTC),
+		FinishedAt: time.Date(2026, time.March, 17, 12, 38, 34, 95*int(time.Millisecond), time.UTC),
+	}
+
+	_ = doJSON[api.EnvironmentResponse](t, handler, http.MethodPost, "/api/environments", api.UpsertEnvironmentRequest{
+		Name:            "shell",
+		ImageRepository: "busybox",
+		ImageTag:        "latest",
+		Enabled:         true,
+		Build: model.BuildSpec{
+			Dockerfile: "FROM busybox:latest\n",
+		},
+	}, http.StatusOK, "")
+	_ = doJSON[api.CreateSessionResponse](t, handler, http.MethodPost, "/api/sessions/create", api.CreateSessionRequest{
+		SessionID:       "stdout-failed-http-session",
+		EnvironmentName: "shell",
+	}, http.StatusOK, "")
+
+	body, _ := doText(t, handler, http.MethodPost, "/api/sessions/stdout-failed-http-session/execute", api.ExecuteSessionRequest{
+		Command: "pwd",
+	}, http.StatusOK, "")
+	if body != "fallback output\nexitCode: 9" {
+		t.Fatalf("execute body = %q, want stdout fallback plus exitCode", body)
+	}
+}
+
+func TestExecuteEndpointTreatsStderrAsPlainTextFailure(t *testing.T) {
+	t.Parallel()
+
+	handler, _, fake := newTestHandlerWithRuntime(t, "")
+	fake.execResult = runtime.ExecResult{
+		ExitCode:   0,
+		Stderr:     "warning\n",
+		StartedAt:  time.Date(2026, time.March, 17, 12, 38, 34, 0, time.UTC),
+		FinishedAt: time.Date(2026, time.March, 17, 12, 38, 34, 95*int(time.Millisecond), time.UTC),
+	}
+
+	_ = doJSON[api.EnvironmentResponse](t, handler, http.MethodPost, "/api/environments", api.UpsertEnvironmentRequest{
+		Name:            "shell",
+		ImageRepository: "busybox",
+		ImageTag:        "latest",
+		Enabled:         true,
+		Build: model.BuildSpec{
+			Dockerfile: "FROM busybox:latest\n",
+		},
+	}, http.StatusOK, "")
+	_ = doJSON[api.CreateSessionResponse](t, handler, http.MethodPost, "/api/sessions/create", api.CreateSessionRequest{
+		SessionID:       "stderr-http-session",
+		EnvironmentName: "shell",
+	}, http.StatusOK, "")
+
+	body, _ := doText(t, handler, http.MethodPost, "/api/sessions/stderr-http-session/execute", api.ExecuteSessionRequest{
+		Command: "pwd",
+	}, http.StatusOK, "")
+	if body != "warning\nexitCode: 0" {
+		t.Fatalf("execute body = %q, want stderr plus exitCode for zero exit", body)
+	}
+}
+
+func TestExecuteEndpointUsesDefaultFailureMessageWhenOutputIsEmpty(t *testing.T) {
+	t.Parallel()
+
+	handler, _, fake := newTestHandlerWithRuntime(t, "")
+	fake.execResult = runtime.ExecResult{
+		ExitCode:   1,
+		StartedAt:  time.Date(2026, time.March, 17, 12, 38, 34, 0, time.UTC),
+		FinishedAt: time.Date(2026, time.March, 17, 12, 38, 34, 95*int(time.Millisecond), time.UTC),
+	}
+
+	_ = doJSON[api.EnvironmentResponse](t, handler, http.MethodPost, "/api/environments", api.UpsertEnvironmentRequest{
+		Name:            "shell",
+		ImageRepository: "busybox",
+		ImageTag:        "latest",
+		Enabled:         true,
+		Build: model.BuildSpec{
+			Dockerfile: "FROM busybox:latest\n",
+		},
+	}, http.StatusOK, "")
+	_ = doJSON[api.CreateSessionResponse](t, handler, http.MethodPost, "/api/sessions/create", api.CreateSessionRequest{
+		SessionID:       "empty-http-session",
+		EnvironmentName: "shell",
+	}, http.StatusOK, "")
+
+	body, _ := doText(t, handler, http.MethodPost, "/api/sessions/empty-http-session/execute", api.ExecuteSessionRequest{
+		Command: "pwd",
+	}, http.StatusOK, "")
+	if body != "command failed\nexitCode: 1" {
+		t.Fatalf("execute body = %q, want default failure message plus exitCode", body)
+	}
+}
+
 func TestCreateSessionEndpointAcceptsMounts(t *testing.T) {
 	t.Parallel()
 
@@ -1334,6 +1468,30 @@ func doJSON[T any](t *testing.T, handler http.Handler, method, path string, payl
 		t.Fatalf("json.Decode() error = %v", err)
 	}
 	return result
+}
+
+func doText(t *testing.T, handler http.Handler, method, path string, payload any, wantStatus int, bearer string) (string, string) {
+	t.Helper()
+
+	var body bytes.Buffer
+	if payload != nil {
+		if err := json.NewEncoder(&body).Encode(payload); err != nil {
+			t.Fatalf("json.Encode() error = %v", err)
+		}
+	}
+	req := httptest.NewRequest(method, path, &body)
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+	if recorder.Code != wantStatus {
+		t.Fatalf("%s %s status = %d, want %d, body = %s", method, path, recorder.Code, wantStatus, recorder.Body.String())
+	}
+	return recorder.Body.String(), recorder.Header().Get("Content-Type")
 }
 
 func newTestHandler(t *testing.T, authToken string) http.Handler {

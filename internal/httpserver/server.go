@@ -317,7 +317,7 @@ func (s *Server) handleExecuteSession(w http.ResponseWriter, r *http.Request) {
 		s.writeMappedError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, response)
+	writePlainText(w, http.StatusOK, formatExecuteResponse(response))
 }
 
 func (s *Server) handleStopSession(w http.ResponseWriter, r *http.Request) {
@@ -585,6 +585,33 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func writePlainText(w http.ResponseWriter, status int, payload string) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(status)
+	_, _ = io.WriteString(w, payload)
+}
+
+func formatExecuteResponse(response *api.ExecuteSessionResponse) string {
+	if response == nil {
+		return ""
+	}
+	if response.ExitCode == 0 && response.Stderr == "" {
+		return response.Stdout
+	}
+
+	body := response.Stderr
+	if body == "" {
+		body = response.Stdout
+	}
+	if body == "" {
+		body = "command failed"
+	}
+	if !strings.HasSuffix(body, "\n") {
+		body += "\n"
+	}
+	return body + fmt.Sprintf("exitCode: %d", response.ExitCode)
 }
 
 func writeSSEEvent(w http.ResponseWriter, event string, payload any) {

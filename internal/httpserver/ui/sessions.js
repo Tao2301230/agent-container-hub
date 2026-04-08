@@ -802,9 +802,6 @@ function renderQuickExecuteResult(payload) {
       <div class="detail-box"><div class="meta">Command</div><strong>${escapeHTML(payload.preset.command || "-")}</strong></div>
       <div class="detail-box"><div class="meta">Cwd</div><strong>${escapeHTML(payload.preset.cwd || "(session default)")}</strong></div>
       <div class="detail-box"><div class="meta">Timeout</div><strong>${escapeHTML(payload.preset.timeout_ms || 0)} ms</strong></div>
-      <div class="detail-box"><div class="meta">Exit Code</div><strong>${escapeHTML(payload.response.exit_code)}</strong></div>
-      <div class="detail-box"><div class="meta">Started At</div><strong>${escapeHTML(payload.response.started_at || "-")}</strong></div>
-      <div class="detail-box"><div class="meta">Duration</div><strong>${escapeHTML(payload.response.duration_ms)} ms</strong></div>
     </div>
 
     <div class="stack">
@@ -816,16 +813,9 @@ function renderQuickExecuteResult(payload) {
 
     <div class="stack">
       <div>
-        <h3>Stdout</h3>
+        <h3>Output</h3>
       </div>
-      <pre>${escapeHTML(payload.response.stdout || "")}</pre>
-    </div>
-
-    <div class="stack">
-      <div>
-        <h3>Stderr</h3>
-      </div>
-      <pre>${escapeHTML(payload.response.stderr || "")}</pre>
+      <pre>${escapeHTML(payload.response || "")}</pre>
     </div>
   `;
 }

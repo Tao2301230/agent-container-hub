@@ -1,6 +1,16 @@
+# Local environment overrides
+.env
+
+# Local Go caches
 .gocache/
 .gomodcache/
-.env
+
+# Runtime state and build outputs
 data/
 dist/
+
+# Root-level compiled binary
+/agent-container-hub
+
+# OS-generated files
 .DS_Store
