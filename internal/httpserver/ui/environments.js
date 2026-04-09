@@ -47,17 +47,22 @@ const state = {
 };
 
 const environmentList = document.getElementById("environment-list");
+const environmentListMobile = document.getElementById("environment-list-mobile");
 const environmentOverview = document.getElementById("environment-overview");
 const environmentOutput = document.getElementById("environment-output");
 const environmentYAML = document.getElementById("environment-yaml");
 const saveButton = document.getElementById("save");
 const buildButton = document.getElementById("build");
+const openEnvironmentListButton = document.getElementById("open-environment-list");
+const refreshEnvironmentsButton = document.getElementById("refresh-environments");
+const refreshEnvironmentsMobileButton = document.getElementById("refresh-environments-mobile");
 const refreshFilesButton = document.getElementById("refresh-files");
 const newFileButton = document.getElementById("new-file");
 const saveFileButton = document.getElementById("save-file");
 const environmentFileList = document.getElementById("environment-file-list");
 const environmentFilePath = document.getElementById("environment-file-path");
 const environmentFileContent = document.getElementById("environment-file-content");
+const environmentPickerBackdrop = document.getElementById("environment-picker-backdrop");
 const buildTargetBackdrop = document.getElementById("build-target-backdrop");
 const buildTargetMeta = document.getElementById("build-target-meta");
 const buildTargetOptions = document.getElementById("build-target-options");
@@ -68,6 +73,7 @@ const buildProgressMeta = document.getElementById("build-progress-meta");
 const buildProgressLog = document.getElementById("build-progress-log");
 const buildProgressRefresh = document.getElementById("build-progress-refresh");
 const buildProgressAutoscroll = document.getElementById("build-progress-autoscroll");
+const mobileEnvironmentPickerQuery = window.matchMedia("(max-width: 1180px)");
 
 function clearEnvironmentForm() {
   document.getElementById("name").value = "";
@@ -446,8 +452,43 @@ async function refreshEnvironments(selectedName = "") {
   environmentYAML.textContent = "No environment selected.";
 }
 
+function bindEnvironmentSelectionHandlers(container, options = {}) {
+  if (!container) {
+    return;
+  }
+  container.querySelectorAll("[data-environment-name]").forEach((node) => {
+    node.addEventListener("click", async () => {
+      try {
+        await selectEnvironment(node.dataset.environmentName);
+        if (options.closeOnSelect) {
+          closeModal("environment-picker-backdrop");
+        }
+      } catch (error) {
+        environmentOutput.textContent = error.message;
+        showToast(error.message, "error");
+      }
+    });
+  });
+}
+
+async function handleRefreshEnvironments() {
+  try {
+    await refreshEnvironments(state.environments.selectedName);
+    showToast("Environments refreshed.", "success");
+  } catch (error) {
+    environmentOutput.textContent = error.message;
+    showToast(error.message, "error");
+  }
+}
+
+function closeEnvironmentPickerOnDesktop() {
+  if (!mobileEnvironmentPickerQuery.matches && environmentPickerBackdrop?.classList.contains("open")) {
+    closeModal("environment-picker-backdrop");
+  }
+}
+
 function renderEnvironments() {
-  environmentList.innerHTML = state.environments.items.map((item) => `
+  const markup = state.environments.items.map((item) => `
     <div class="list-item environment-list-item ${state.environments.selectedName === item.name ? "active" : ""}" data-environment-name="${escapeHTML(item.name)}">
       <div class="environment-list-head">
         <div class="environment-list-title">
@@ -475,11 +516,13 @@ function renderEnvironments() {
     </div>
   `).join("") || `<div class="empty">No environments yet.</div>`;
 
-  environmentList.querySelectorAll("[data-environment-name]").forEach((node) => {
-    node.addEventListener("click", async () => {
-      await selectEnvironment(node.dataset.environmentName);
-    });
-  });
+  environmentList.innerHTML = markup;
+  if (environmentListMobile) {
+    environmentListMobile.innerHTML = markup;
+  }
+
+  bindEnvironmentSelectionHandlers(environmentList);
+  bindEnvironmentSelectionHandlers(environmentListMobile, { closeOnSelect: true });
 }
 
 function updateBuildButton() {
@@ -513,6 +556,7 @@ async function selectEnvironment(name) {
   updateBuildButton();
   await refreshEnvironmentFiles(item.name, state.files.selectedPath || "environment.yml");
   renderEnvironments();
+  closeEnvironmentPickerOnDesktop();
 }
 
 function collectEnvironmentPayload() {
@@ -846,6 +890,27 @@ async function initialize() {
   initializeShell("environments");
   bindModalDismiss();
 
+  if (openEnvironmentListButton) {
+    openEnvironmentListButton.addEventListener("click", () => {
+      openModal("environment-picker-backdrop");
+    });
+  }
+
+  [refreshEnvironmentsButton, refreshEnvironmentsMobileButton].filter(Boolean).forEach((button) => {
+    button.addEventListener("click", handleRefreshEnvironments);
+  });
+
+  const syncEnvironmentPicker = (event) => {
+    if (!event.matches && environmentPickerBackdrop?.classList.contains("open")) {
+      closeModal("environment-picker-backdrop");
+    }
+  };
+  if (typeof mobileEnvironmentPickerQuery.addEventListener === "function") {
+    mobileEnvironmentPickerQuery.addEventListener("change", syncEnvironmentPicker);
+  } else {
+    mobileEnvironmentPickerQuery.addListener(syncEnvironmentPicker);
+  }
+
   buildProgressBackdrop.addEventListener("modal:closed", () => {
     disconnectBuildStream();
   });
@@ -884,16 +949,6 @@ async function initialize() {
         connectBuildStream(jobID);
       }
     } catch (error) {
-      showToast(error.message, "error");
-    }
-  });
-
-  document.getElementById("refresh-environments").addEventListener("click", async () => {
-    try {
-      await refreshEnvironments(state.environments.selectedName);
-      showToast("Environments refreshed.", "success");
-    } catch (error) {
-      environmentOutput.textContent = error.message;
       showToast(error.message, "error");
     }
   });
