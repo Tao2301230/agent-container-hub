@@ -39,12 +39,16 @@ resolve_release_context() {
   [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "VERSION must match vX.Y.Z (got: $VERSION)"
 
   ARCH="${ARCH:-$(detect_arch)}"
-  case "$ARCH" in
-    amd64|arm64) ;;
-    *) die "ARCH must be amd64 or arm64 (got: $ARCH)" ;;
-  esac
+  validate_arch "$ARCH"
 
   RELEASE_DIR="$REPO_ROOT/dist/release"
+}
+
+validate_arch() {
+  case "$1" in
+    amd64|arm64) ;;
+    *) die "ARCH must be amd64 or arm64 (got: $1)" ;;
+  esac
 }
 
 validate_target_os() {
@@ -71,6 +75,37 @@ parse_program_targets() {
     validate_target_os "$target"
     printf '%s\n' "$target"
   done
+}
+
+parse_program_target_matrix() {
+  local raw="${PROGRAM_TARGET_MATRIX:-}"
+  local target_spec
+  local target_os
+  local target_arch
+
+  if [[ -n "$raw" ]]; then
+    raw="${raw//,/ }"
+    for target_spec in $raw; do
+      [[ "$target_spec" == */* ]] || die "PROGRAM_TARGET_MATRIX entries must look like <os>/<arch> (got: $target_spec)"
+      target_os="${target_spec%%/*}"
+      target_arch="${target_spec#*/}"
+      validate_target_os "$target_os"
+      validate_arch "$target_arch"
+      printf '%s %s\n' "$target_os" "$target_arch"
+    done
+    return
+  fi
+
+  if [[ -n "${PROGRAM_TARGETS:-}" ]]; then
+    while IFS= read -r target_os; do
+      [[ -n "$target_os" ]] || continue
+      printf '%s %s\n' "$target_os" "$ARCH"
+    done < <(parse_program_targets)
+    return
+  fi
+
+  printf 'darwin arm64\n'
+  printf 'windows amd64\n'
 }
 
 image_target_os() {

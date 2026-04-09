@@ -1,6 +1,6 @@
 APP_NAME := agent-container-hub
 VERSION := $(shell cat VERSION 2>/dev/null || echo "dev")
-ARCH := $(shell uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')
+ARCH ?= $(shell uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')
 LDFLAGS := -X main.buildVersion=$(VERSION)
 BUILD_DIR := dist/release
 BUILD_BIN := $(BUILD_DIR)/$(APP_NAME)-$(VERSION)

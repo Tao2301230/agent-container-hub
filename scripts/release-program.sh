@@ -16,6 +16,7 @@ cd "$REPO_ROOT"
 
 build_program_bundle() {
   local target_os="$1"
+  local target_arch="$2"
   local binary_name
   local bundle_name
   local bundle_tar
@@ -23,10 +24,10 @@ build_program_bundle() {
   local bundle_root
 
   binary_name="$(binary_name_for_os "$target_os")"
-  bundle_name="${APP_NAME}-program-${VERSION}-${target_os}-${ARCH}"
+  bundle_name="${APP_NAME}-program-${VERSION}-${target_os}-${target_arch}"
   bundle_tar="$RELEASE_DIR/${bundle_name}.tar.gz"
 
-  echo "[release] program VERSION=$VERSION TARGET_OS=$target_os ARCH=$ARCH"
+  echo "[release] program VERSION=$VERSION TARGET_OS=$target_os ARCH=$target_arch"
 
   tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/agent-container-hub-program-release.XXXXXX")"
   trap 'rm -rf "$tmp_dir"' RETURN
@@ -38,7 +39,7 @@ build_program_bundle() {
     "$bundle_root/data/builds"
 
   echo "[release] building program binary for $target_os..."
-  CGO_ENABLED=0 GOOS="$target_os" GOARCH="$ARCH" \
+  CGO_ENABLED=0 GOOS="$target_os" GOARCH="$target_arch" \
     go build \
     -ldflags "-X main.buildVersion=$VERSION" \
     -o "$bundle_root/$binary_name" \
@@ -75,7 +76,8 @@ build_program_bundle() {
   trap - RETURN
 }
 
-while IFS= read -r target_os; do
+while read -r target_os target_arch; do
   [[ -n "$target_os" ]] || continue
-  build_program_bundle "$target_os"
-done < <(parse_program_targets)
+  [[ -n "$target_arch" ]] || die "missing ARCH for program target $target_os"
+  build_program_bundle "$target_os" "$target_arch"
+done < <(parse_program_target_matrix)

@@ -108,7 +108,10 @@ make release
 make release-program
 ```
 
-默认会一次产出 `darwin` 和 `windows` 两个平台的程序 bundle。
+默认会一次产出两个 program bundle：
+
+- `darwin/arm64`
+- `windows/amd64`
 
 构建镜像 bundle：
 
@@ -121,8 +124,8 @@ make release-image VERSION=v0.1.0
 产物输出到：
 
 ```text
-dist/release/agent-container-hub-program-vX.Y.Z-darwin-<arch>.tar.gz
-dist/release/agent-container-hub-program-vX.Y.Z-windows-<arch>.tar.gz
+dist/release/agent-container-hub-program-vX.Y.Z-darwin-arm64.tar.gz
+dist/release/agent-container-hub-program-vX.Y.Z-windows-amd64.tar.gz
 dist/release/agent-container-hub-image-bundle-vX.Y.Z-linux-<arch>.tar.gz
 ```
 
@@ -136,8 +139,8 @@ program bundle 解压后包含：
 
 其中：
 
-- `darwin` bundle 包含 `start.sh` / `stop.sh`
-- `windows` bundle 包含 `release-scripts/windows/`
+- `darwin/arm64` bundle 包含 `start.sh` / `stop.sh`
+- `windows/amd64` bundle 包含 `release-scripts/windows/`
 
 image bundle 解压后包含：
 
@@ -159,6 +162,13 @@ cd agent-container-hub
 更完整的发布设计见 [docs/versioned-release-bundle.md](./docs/versioned-release-bundle.md)。
 
 仓库内 release 静态资产统一收口在 `scripts/release-assets/`，其中 program bundle 资产位于 `scripts/release-assets/program/`，Windows 的仓库内打包入口位于 `scripts/release-windows-package.ps1`。
+
+如需自定义 program 目标，可使用：
+
+```bash
+PROGRAM_TARGET_MATRIX=darwin/arm64,windows/amd64 make release-program VERSION=v0.1.0
+PROGRAM_TARGETS=windows make release-program VERSION=v0.1.0 ARCH=amd64
+```
 
 ## 配置
 

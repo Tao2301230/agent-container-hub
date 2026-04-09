@@ -33,10 +33,12 @@ make release-image
 
 - `VERSION`
 - `ARCH`
+- `PROGRAM_TARGETS`
+- `PROGRAM_TARGET_MATRIX`
 
 默认平台规则：
 
-- `release` / `release-program`：固定打 `darwin` 和 `windows`
+- `release` / `release-program`：默认固定打 `darwin/arm64` 和 `windows/amd64`
 - `release-image`：固定打 `linux` 当前架构镜像 bundle
 
 在 `arm64` 机器上，`release-image` 默认只打 `linux/arm64` 镜像，不做多架构合包。
@@ -46,16 +48,16 @@ make release-image
 ### 3.1 产物命名
 
 ```text
-dist/release/agent-container-hub-program-vX.Y.Z-darwin-<arch>.tar.gz
-dist/release/agent-container-hub-program-vX.Y.Z-windows-<arch>.tar.gz
+dist/release/agent-container-hub-program-vX.Y.Z-darwin-arm64.tar.gz
+dist/release/agent-container-hub-program-vX.Y.Z-windows-amd64.tar.gz
 ```
 
 ### 3.2 默认行为
 
 一次执行会生成两个程序 bundle：
 
-- `darwin`
-- `windows`
+- `darwin/arm64`
+- `windows/amd64`
 
 这两个 bundle 都包含：
 
@@ -68,8 +70,8 @@ dist/release/agent-container-hub-program-vX.Y.Z-windows-<arch>.tar.gz
 
 按 OS 分开定制：
 
-- `darwin` bundle 包含 `start.sh` / `stop.sh`
-- `windows` bundle 使用 `.exe`，并包含 `release-scripts/windows/`
+- `darwin/arm64` bundle 包含 `start.sh` / `stop.sh`
+- `windows/amd64` bundle 使用 `.exe`，并包含 `release-scripts/windows/`
 - 只有显式指定 `PROGRAM_TARGETS=linux` 时才会带 `systemd/agent-container-hub.service`
 
 仓库内的 release 静态资产统一维护在 `scripts/release-assets/`：
@@ -81,7 +83,7 @@ dist/release/agent-container-hub-program-vX.Y.Z-windows-<arch>.tar.gz
 
 ```bash
 make release VERSION=v1.0.0
-make release-program VERSION=v1.0.0 ARCH=arm64
+PROGRAM_TARGET_MATRIX=darwin/arm64,windows/amd64 make release-program VERSION=v1.0.0
 PROGRAM_TARGETS=windows make release-program VERSION=v1.0.0 ARCH=amd64
 ```
 
@@ -128,7 +130,7 @@ cd agent-container-hub
 ## 5. 验证重点
 
 - `make release` 与 `make release-program` 行为一致
-- `make release` 一次产出 `darwin` 和 `windows` 两个程序 bundle
-- `darwin` bundle 不含 `systemd`
-- `windows` bundle 包含 `.exe` 和 Windows 脚本
+- `make release` 一次产出 `darwin/arm64` 和 `windows/amd64` 两个程序 bundle
+- `darwin/arm64` bundle 不含 `systemd`
+- `windows/amd64` bundle 包含 `.exe` 和 Windows 脚本
 - `make release-image` 产出 Linux 镜像 bundle，总包内含离线镜像 tar.gz 和运行配置
