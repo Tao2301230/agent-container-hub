@@ -102,6 +102,27 @@ test_local_mode_creates_runtime_dirs_and_stops_cleanly() {
   assert_contains "$output" "stopped agent-container-hub"
 }
 
+test_invalid_pid_file_is_treated_as_stale() {
+  local bundle_dir="$TMP_ROOT/invalid-pid"
+  make_bundle "$bundle_dir"
+  mkdir -p "$bundle_dir/run"
+  printf 'not-a-pid\n' >"$bundle_dir/run/agent-container-hub.pid"
+
+  local output
+  output="$(
+    cd "$bundle_dir" &&
+      PATH="$SAFE_PATH" /bin/bash ./start.sh --daemon 2>&1
+  )"
+  assert_contains "$output" "started agent-container-hub in daemon mode"
+  [[ -f "$bundle_dir/run/agent-container-hub.pid" ]] || { echo "expected pid file to be recreated" >&2; exit 1; }
+
+  output="$(
+    cd "$bundle_dir" &&
+      PATH="$SAFE_PATH" /bin/bash ./stop.sh 2>&1
+  )"
+  assert_contains "$output" "stopped agent-container-hub"
+}
+
 test_auto_detect_requires_engine_in_path() {
   local bundle_dir="$TMP_ROOT/auto-detect"
   make_bundle "$bundle_dir"
@@ -151,6 +172,7 @@ EOF
 
 test_missing_env_fails_fast
 test_local_mode_creates_runtime_dirs_and_stops_cleanly
+test_invalid_pid_file_is_treated_as_stale
 test_auto_detect_requires_engine_in_path
 test_invalid_explicit_engine_fails_fast
 

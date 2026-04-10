@@ -7,9 +7,16 @@ die() {
 }
 
 IMAGE_DIR="./images"
+CONTAINER_ENGINE=""
 
 [[ -d "$IMAGE_DIR" ]] || die "image directory not found: $IMAGE_DIR"
-command -v docker >/dev/null 2>&1 || die "docker is required in PATH"
+if command -v docker >/dev/null 2>&1; then
+  CONTAINER_ENGINE="docker"
+elif command -v podman >/dev/null 2>&1; then
+  CONTAINER_ENGINE="podman"
+else
+  die "docker or podman is required in PATH"
+fi
 
 archives=("$IMAGE_DIR"/*.tar.gz)
 [[ -e "${archives[0]}" ]] || die "no image archive found under $IMAGE_DIR"
@@ -27,5 +34,5 @@ arch="${BASH_REMATCH[2]}"
 image_tag="agent-container-hub:${version}-linux-${arch}"
 
 echo "[load-image] importing $archive"
-gzip -dc "$archive" | docker load
+gzip -dc "$archive" | "$CONTAINER_ENGINE" load
 echo "[load-image] image available as $image_tag"

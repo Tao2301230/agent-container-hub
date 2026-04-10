@@ -15,7 +15,6 @@ import (
 	"sync"
 	"time"
 
-	"agent-container-hub/internal/api"
 	"agent-container-hub/internal/config"
 	"agent-container-hub/internal/model"
 	"agent-container-hub/internal/runtime"
@@ -39,7 +38,7 @@ var makeTargetPatterns = map[string]*regexp.Regexp{
 
 type BuildEvent struct {
 	Type  string
-	Job   *api.BuildJobResponse
+	Job   *model.BuildJob
 	Chunk string
 }
 
@@ -90,7 +89,7 @@ func NewBuildService(cfg config.Config, st store.BuildJobStore, envs store.Envir
 	}
 }
 
-func (s *BuildService) StartBuildJob(ctx context.Context, name string, req api.BuildEnvironmentRequest) (*api.BuildJobResponse, error) {
+func (s *BuildService) StartBuildJob(ctx context.Context, name string, req model.BuildEnvironmentRequest) (*model.BuildJob, error) {
 	if runtime.IsLocalRuntime(s.runtime.Name()) {
 		return nil, fmt.Errorf("%w: build is not supported when ENGINE=local", ErrValidation)
 	}
@@ -127,7 +126,7 @@ func (s *BuildService) StartBuildJob(ctx context.Context, name string, req api.B
 
 	if useMake {
 		go s.runMakeBuildJob(context.Background(), active, environment.Clone(), s.environmentConfigDir(environment.Name), target)
-		return buildJobToResponse(job), nil
+		return job.Clone(), nil
 	}
 
 	buildDir := filepath.Join(s.cfg.BuildRoot, job.ID)
@@ -146,11 +145,11 @@ func (s *BuildService) StartBuildJob(ctx context.Context, name string, req api.B
 	}
 
 	go s.runDirectBuildJob(context.Background(), active, environment.Clone(), buildDir, dockerfilePath)
-	return buildJobToResponse(job), nil
+	return job.Clone(), nil
 }
 
-func (s *BuildService) BuildEnvironment(ctx context.Context, name string) (*api.BuildJobResponse, error) {
-	started, err := s.StartBuildJob(ctx, name, api.BuildEnvironmentRequest{})
+func (s *BuildService) BuildEnvironment(ctx context.Context, name string) (*model.BuildJob, error) {
+	started, err := s.StartBuildJob(ctx, name, model.BuildEnvironmentRequest{})
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +176,7 @@ func (s *BuildService) BuildEnvironment(ctx context.Context, name string) (*api.
 	}
 }
 
-func (s *BuildService) GetBuildJob(ctx context.Context, id string) (*api.BuildJobResponse, error) {
+func (s *BuildService) GetBuildJob(ctx context.Context, id string) (*model.BuildJob, error) {
 	if active := s.getActiveJob(id); active != nil {
 		return active.snapshot(), nil
 	}
@@ -185,10 +184,10 @@ func (s *BuildService) GetBuildJob(ctx context.Context, id string) (*api.BuildJo
 	if err != nil {
 		return nil, err
 	}
-	return buildJobToResponse(job), nil
+	return job.Clone(), nil
 }
 
-func (s *BuildService) LatestBuildJob(ctx context.Context, environmentName string) (*api.BuildJobResponse, error) {
+func (s *BuildService) LatestBuildJob(ctx context.Context, environmentName string) (*model.BuildJob, error) {
 	environmentName = strings.TrimSpace(environmentName)
 	if environmentName == "" {
 		return nil, nil
@@ -203,7 +202,7 @@ func (s *BuildService) LatestBuildJob(ctx context.Context, environmentName strin
 	if len(jobs) == 0 {
 		return nil, nil
 	}
-	return buildJobToResponse(jobs[0]), nil
+	return jobs[0].Clone(), nil
 }
 
 func (s *BuildService) ReconcileExistingImages(ctx context.Context) error {
@@ -229,7 +228,7 @@ func (s *BuildService) ReconcileExistingImages(ctx context.Context) error {
 	return nil
 }
 
-func (s *BuildService) SubscribeBuildJob(_ context.Context, id string) (*api.BuildJobResponse, <-chan BuildEvent, func(), error) {
+func (s *BuildService) SubscribeBuildJob(_ context.Context, id string) (*model.BuildJob, <-chan BuildEvent, func(), error) {
 	if active := s.getActiveJob(id); active != nil {
 		return active.subscribe()
 	}
@@ -238,7 +237,7 @@ func (s *BuildService) SubscribeBuildJob(_ context.Context, id string) (*api.Bui
 		return nil, nil, nil, err
 	}
 	cancel := func() {}
-	return buildJobToResponse(job), nil, cancel, nil
+	return job.Clone(), nil, cancel, nil
 }
 
 func (s *BuildService) reconcileEnvironmentImage(ctx context.Context, environment *model.Environment) error {
@@ -455,7 +454,7 @@ func (s *BuildService) setBuildStatus(active *activeBuildJob, status model.Build
 
 func (s *BuildService) finishBuildJob(active *activeBuildJob, status model.BuildJobStatus, errMessage string, finishedAt time.Time) {
 	snapshot, subscribers, releaseLock := active.finish(status, errMessage, finishedAt)
-	if saveErr := s.store.SaveBuildJob(context.Background(), responseToBuildJob(snapshot)); saveErr != nil {
+	if saveErr := s.store.SaveBuildJob(context.Background(), snapshot.Clone()); saveErr != nil {
 		s.logger.Error("save build job failed", "build_job_id", snapshot.ID, "error", saveErr)
 	}
 
@@ -623,19 +622,19 @@ func isSupportedBuildTarget(target string) bool {
 	}
 }
 
-func (j *activeBuildJob) snapshot() *api.BuildJobResponse {
+func (j *activeBuildJob) snapshot() *model.BuildJob {
 	j.mu.RLock()
 	defer j.mu.RUnlock()
-	return buildJobToResponse(j.job.Clone())
+	return j.job.Clone()
 }
 
-func (j *activeBuildJob) subscribe() (*api.BuildJobResponse, <-chan BuildEvent, func(), error) {
+func (j *activeBuildJob) subscribe() (*model.BuildJob, <-chan BuildEvent, func(), error) {
 	ch := make(chan BuildEvent, 32)
 	j.mu.Lock()
 	id := j.nextSubscriberID
 	j.nextSubscriberID++
 	j.subscribers[id] = ch
-	snapshot := buildJobToResponse(j.job.Clone())
+	snapshot := j.job.Clone()
 	j.mu.Unlock()
 
 	cancel := func() {
@@ -660,16 +659,16 @@ func (j *activeBuildJob) appendOutput(chunk string) []chan BuildEvent {
 	return subscribers
 }
 
-func (j *activeBuildJob) setStatus(status model.BuildJobStatus) (*api.BuildJobResponse, []chan BuildEvent) {
+func (j *activeBuildJob) setStatus(status model.BuildJobStatus) (*model.BuildJob, []chan BuildEvent) {
 	j.mu.Lock()
 	j.job.Status = status
-	snapshot := buildJobToResponse(j.job.Clone())
+	snapshot := j.job.Clone()
 	subscribers := j.subscriberSnapshotLocked()
 	j.mu.Unlock()
 	return snapshot, subscribers
 }
 
-func (j *activeBuildJob) finish(status model.BuildJobStatus, errMessage string, finishedAt time.Time) (*api.BuildJobResponse, []chan BuildEvent, func()) {
+func (j *activeBuildJob) finish(status model.BuildJobStatus, errMessage string, finishedAt time.Time) (*model.BuildJob, []chan BuildEvent, func()) {
 	j.mu.Lock()
 	j.job.Status = status
 	j.job.Error = errMessage
@@ -677,7 +676,7 @@ func (j *activeBuildJob) finish(status model.BuildJobStatus, errMessage string, 
 		finishedAt = time.Now().UTC()
 	}
 	j.job.FinishedAt = finishedAt
-	snapshot := buildJobToResponse(j.job.Clone())
+	snapshot := j.job.Clone()
 	subscribers := j.subscriberSnapshotLocked()
 	j.subscribers = make(map[int]chan BuildEvent)
 	releaseLock := j.releaseLock
@@ -694,37 +693,9 @@ func (j *activeBuildJob) subscriberSnapshotLocked() []chan BuildEvent {
 	return subscribers
 }
 
-func buildJobToResponse(job *model.BuildJob) *api.BuildJobResponse {
-	return &api.BuildJobResponse{
-		ID:              job.ID,
-		EnvironmentName: job.EnvironmentName,
-		ImageRef:        job.ImageRef,
-		Target:          job.Target,
-		Status:          string(job.Status),
-		Output:          job.Output,
-		Error:           job.Error,
-		StartedAt:       job.StartedAt,
-		FinishedAt:      job.FinishedAt,
-	}
-}
-
-func responseToBuildJob(response *api.BuildJobResponse) *model.BuildJob {
-	return &model.BuildJob{
-		ID:              response.ID,
-		EnvironmentName: response.EnvironmentName,
-		ImageRef:        response.ImageRef,
-		Target:          response.Target,
-		Status:          model.BuildJobStatus(response.Status),
-		Output:          response.Output,
-		Error:           response.Error,
-		StartedAt:       response.StartedAt,
-		FinishedAt:      response.FinishedAt,
-	}
-}
-
-func isTerminalBuildStatus(status string) bool {
+func isTerminalBuildStatus(status model.BuildJobStatus) bool {
 	switch status {
-	case string(model.BuildJobStatusSucceeded), string(model.BuildJobStatusFailed):
+	case model.BuildJobStatusSucceeded, model.BuildJobStatusFailed:
 		return true
 	default:
 		return false

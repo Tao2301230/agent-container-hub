@@ -10,7 +10,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"agent-container-hub/internal/api"
 	"agent-container-hub/internal/model"
 	"agent-container-hub/internal/runtime"
 )
@@ -57,8 +56,8 @@ func generateID() (string, error) {
 	return hex.EncodeToString(buf), nil
 }
 
-func executeResponse(sessionID, execCwd string, result runtime.ExecResult) *api.ExecuteSessionResponse {
-	return &api.ExecuteSessionResponse{
+func executeResponse(sessionID, execCwd string, result runtime.ExecResult) *model.ExecuteSessionResult {
+	return &model.ExecuteSessionResult{
 		SessionID:        sessionID,
 		ExitCode:         result.ExitCode,
 		Stdout:           result.Stdout,
@@ -71,7 +70,7 @@ func executeResponse(sessionID, execCwd string, result runtime.ExecResult) *api.
 	}
 }
 
-func executionFromResult(sessionID string, req api.ExecuteSessionRequest, execCwd string, result runtime.ExecResult, maxOutputBytes int) *model.SessionExecution {
+func executionFromResult(sessionID string, req model.ExecuteSessionRequest, execCwd string, result runtime.ExecResult, maxOutputBytes int) *model.SessionExecution {
 	stdout, stdoutTruncated := truncateLogOutput(result.Stdout, maxOutputBytes)
 	stderr, stderrTruncated := truncateLogOutput(result.Stderr, maxOutputBytes)
 	return &model.SessionExecution{
@@ -103,16 +102,16 @@ func truncateLogOutput(output string, maxBytes int) (string, bool) {
 	return truncated, true
 }
 
-func sessionToCreateResponse(session *model.Session, durationMS int64) *api.CreateSessionResponse {
-	response := sessionToResponse(session)
-	return &api.CreateSessionResponse{
-		SessionResponse: *response,
-		DurationMS:      durationMS,
+func sessionToCreateResult(session *model.Session, durationMS int64) *model.CreateSessionResult {
+	response := sessionToView(session)
+	return &model.CreateSessionResult{
+		SessionView: *response,
+		DurationMS:  durationMS,
 	}
 }
 
-func sessionToResponse(session *model.Session) *api.SessionResponse {
-	return &api.SessionResponse{
+func sessionToView(session *model.Session) *model.SessionView {
+	return &model.SessionView{
 		SessionID:       session.ID,
 		EnvironmentName: session.EnvironmentName,
 		ContainerID:     session.ContainerID,
@@ -123,7 +122,7 @@ func sessionToResponse(session *model.Session) *api.SessionResponse {
 		Resources:       session.Resources,
 		Mounts:          append([]model.Mount(nil), session.Mounts...),
 		CreatedAt:       session.CreatedAt,
-		Status:          string(session.Status),
+		Status:          session.Status,
 		StoppedAt:       session.StoppedAt,
 	}
 }

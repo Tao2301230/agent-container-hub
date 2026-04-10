@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"strings"
 
-	"agent-container-hub/internal/api"
 	"agent-container-hub/internal/model"
 	"agent-container-hub/internal/runtime"
 	"agent-container-hub/internal/store"
@@ -21,19 +20,19 @@ type environmentRuntime interface {
 	Name() string
 }
 
+type BuildJobQuerier interface {
+	LatestBuildJob(context.Context, string) (*model.BuildJob, error)
+}
+
 type EnvironmentService struct {
 	environments store.EnvironmentStore
 	configRoot   string
-	builds       interface {
-		LatestBuildJob(context.Context, string) (*api.BuildJobResponse, error)
-	}
-	runtime environmentRuntime
-	logger  *slog.Logger
+	builds       BuildJobQuerier
+	runtime      environmentRuntime
+	logger       *slog.Logger
 }
 
-func NewEnvironmentService(configRoot string, environments store.EnvironmentStore, builds interface {
-	LatestBuildJob(context.Context, string) (*api.BuildJobResponse, error)
-}, imageRuntime environmentRuntime, logger *slog.Logger) *EnvironmentService {
+func NewEnvironmentService(configRoot string, environments store.EnvironmentStore, builds BuildJobQuerier, imageRuntime environmentRuntime, logger *slog.Logger) *EnvironmentService {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -46,7 +45,7 @@ func NewEnvironmentService(configRoot string, environments store.EnvironmentStor
 	}
 }
 
-func (s *EnvironmentService) Upsert(ctx context.Context, req api.UpsertEnvironmentRequest) (*api.EnvironmentResponse, error) {
+func (s *EnvironmentService) Upsert(ctx context.Context, req model.UpsertEnvironmentRequest) (*model.EnvironmentView, error) {
 	name := strings.TrimSpace(req.Name)
 	if err := validateEnvironmentName(name); err != nil {
 		return nil, err
@@ -88,10 +87,15 @@ func (s *EnvironmentService) Upsert(ctx context.Context, req api.UpsertEnvironme
 	}
 	s.logger.Info("environment upserted", "environment", environment.Name, "image", environment.ImageRef())
 	imageMetadata, loaded := s.loadImageMetadata(ctx)
-	return s.toResponse(ctx, stored, true, imageMetadata, loaded)
+	return s.toView(ctx, stored, environmentViewOptions{
+		includeRuntimeDetails: true,
+		includeYAML:           true,
+		imageMetadata:         imageMetadata,
+		imageMetadataLoaded:   loaded,
+	})
 }
 
-func (s *EnvironmentService) Get(ctx context.Context, name string) (*api.EnvironmentResponse, error) {
+func (s *EnvironmentService) Get(ctx context.Context, name string) (*model.EnvironmentView, error) {
 	if err := validateEnvironmentName(name); err != nil {
 		return nil, err
 	}
@@ -100,25 +104,35 @@ func (s *EnvironmentService) Get(ctx context.Context, name string) (*api.Environ
 		return nil, err
 	}
 	imageMetadata, loaded := s.loadImageMetadata(ctx)
-	return s.toResponse(ctx, environment, true, imageMetadata, loaded)
+	return s.toView(ctx, environment, environmentViewOptions{
+		includeRuntimeDetails: true,
+		includeYAML:           true,
+		imageMetadata:         imageMetadata,
+		imageMetadataLoaded:   loaded,
+	})
 }
 
-func (s *EnvironmentService) List(ctx context.Context) ([]*api.EnvironmentResponse, error) {
+func (s *EnvironmentService) List(ctx context.Context) ([]*model.EnvironmentView, error) {
 	environments, err := s.environments.ListEnvironments(ctx)
 	if err != nil {
 		return nil, err
 	}
 	imageMetadata, loaded := s.loadImageMetadata(ctx)
-	responses := make([]*api.EnvironmentResponse, 0, len(environments))
+	responses := make([]*model.EnvironmentView, 0, len(environments))
 	for _, environment := range environments {
-		response, err := s.toResponse(ctx, environment, false, imageMetadata, loaded)
+		response, err := s.toView(ctx, environment, environmentViewOptions{
+			includeRuntimeDetails: true,
+			includeYAML:           false,
+			imageMetadata:         imageMetadata,
+			imageMetadataLoaded:   loaded,
+		})
 		if err != nil {
-			s.logger.Warn("environment toResponse failed, using degraded response",
+			s.logger.Warn("environment toView failed, using degraded response",
 				"environment", environment.Name,
 				"image", environment.ImageRef(),
 				"error", err,
 			)
-			responses = append(responses, s.toResponseDegraded(environment))
+			responses = append(responses, s.baseEnvironmentView(environment))
 			continue
 		}
 		responses = append(responses, response)
@@ -126,7 +140,7 @@ func (s *EnvironmentService) List(ctx context.Context) ([]*api.EnvironmentRespon
 	return responses, nil
 }
 
-func (s *EnvironmentService) GetAgentPrompt(ctx context.Context, name string) (*api.EnvironmentAgentPromptResponse, error) {
+func (s *EnvironmentService) GetAgentPrompt(ctx context.Context, name string) (*model.EnvironmentAgentPrompt, error) {
 	if err := validateEnvironmentName(name); err != nil {
 		return nil, err
 	}
@@ -139,7 +153,7 @@ func (s *EnvironmentService) GetAgentPrompt(ctx context.Context, name string) (*
 	if !hasPrompt {
 		prompt = ""
 	}
-	return &api.EnvironmentAgentPromptResponse{
+	return &model.EnvironmentAgentPrompt{
 		EnvironmentName: environment.Name,
 		HasPrompt:       hasPrompt,
 		Prompt:          prompt,
@@ -147,7 +161,7 @@ func (s *EnvironmentService) GetAgentPrompt(ctx context.Context, name string) (*
 	}, nil
 }
 
-func (s *EnvironmentService) ListFiles(ctx context.Context, name string) ([]*api.EnvironmentFileResponse, error) {
+func (s *EnvironmentService) ListFiles(ctx context.Context, name string) ([]*model.EnvironmentFile, error) {
 	if err := validateEnvironmentName(name); err != nil {
 		return nil, err
 	}
@@ -155,9 +169,9 @@ func (s *EnvironmentService) ListFiles(ctx context.Context, name string) ([]*api
 	if err != nil {
 		return nil, err
 	}
-	response := make([]*api.EnvironmentFileResponse, 0, len(files))
+	response := make([]*model.EnvironmentFile, 0, len(files))
 	for _, file := range files {
-		response = append(response, &api.EnvironmentFileResponse{
+		response = append(response, &model.EnvironmentFile{
 			Path:       file.Path,
 			Size:       file.Size,
 			ModifiedAt: file.ModifiedAt,
@@ -167,7 +181,7 @@ func (s *EnvironmentService) ListFiles(ctx context.Context, name string) ([]*api
 	return response, nil
 }
 
-func (s *EnvironmentService) GetFile(ctx context.Context, name, relPath string) (*api.EnvironmentFileResponse, error) {
+func (s *EnvironmentService) GetFile(ctx context.Context, name, relPath string) (*model.EnvironmentFile, error) {
 	if err := validateEnvironmentName(name); err != nil {
 		return nil, err
 	}
@@ -175,7 +189,7 @@ func (s *EnvironmentService) GetFile(ctx context.Context, name, relPath string) 
 	if err != nil {
 		return nil, err
 	}
-	return &api.EnvironmentFileResponse{
+	return &model.EnvironmentFile{
 		Path:       file.Path,
 		Size:       file.Size,
 		ModifiedAt: file.ModifiedAt,
@@ -184,7 +198,7 @@ func (s *EnvironmentService) GetFile(ctx context.Context, name, relPath string) 
 	}, nil
 }
 
-func (s *EnvironmentService) PutFile(ctx context.Context, name, relPath, content string) (*api.EnvironmentFileResponse, error) {
+func (s *EnvironmentService) PutFile(ctx context.Context, name, relPath, content string) (*model.EnvironmentFile, error) {
 	if err := validateEnvironmentName(name); err != nil {
 		return nil, err
 	}
@@ -194,8 +208,15 @@ func (s *EnvironmentService) PutFile(ctx context.Context, name, relPath, content
 	return s.GetFile(ctx, name, relPath)
 }
 
-func (s *EnvironmentService) toResponse(ctx context.Context, environment *model.Environment, includeYAML bool, imageMetadata map[string]runtime.ImageMetadata, imageMetadataLoaded bool) (*api.EnvironmentResponse, error) {
-	response := &api.EnvironmentResponse{
+type environmentViewOptions struct {
+	includeRuntimeDetails bool
+	includeYAML           bool
+	imageMetadata         map[string]runtime.ImageMetadata
+	imageMetadataLoaded   bool
+}
+
+func (s *EnvironmentService) baseEnvironmentView(environment *model.Environment) *model.EnvironmentView {
+	return &model.EnvironmentView{
 		Name:            environment.Name,
 		Description:     environment.Description,
 		ImageRepository: environment.ImageRepository,
@@ -209,13 +230,21 @@ func (s *EnvironmentService) toResponse(ctx context.Context, environment *model.
 		Enabled:         environment.Enabled,
 		DefaultExecute:  environment.DefaultExecute.Clone(),
 		Build:           environment.Build.Clone(),
+		Available:       false,
 		CreatedAt:       environment.CreatedAt,
 		UpdatedAt:       environment.UpdatedAt,
 	}
-	if imageMetadataLoaded {
-		if metadata, ok := imageMetadata[response.ImageRef]; ok {
+}
+
+func (s *EnvironmentService) toView(ctx context.Context, environment *model.Environment, options environmentViewOptions) (*model.EnvironmentView, error) {
+	response := s.baseEnvironmentView(environment)
+	if !options.includeRuntimeDetails {
+		return response, nil
+	}
+	if options.imageMetadataLoaded {
+		if metadata, ok := options.imageMetadata[response.ImageRef]; ok {
 			response.Available = true
-			response.ImageMetadata = imageMetadataToResponse(metadata)
+			response.ImageMetadata = imageMetadataToView(metadata)
 		} else if runtime.IsLocalRuntime(s.runtime.Name()) {
 			response.Available = true
 		} else {
@@ -238,7 +267,7 @@ func (s *EnvironmentService) toResponse(ctx context.Context, environment *model.
 			} else {
 				response.Available = available
 				if available {
-					response.ImageMetadata = imageMetadataToResponse(runtime.ImageMetadata{
+					response.ImageMetadata = imageMetadataToView(runtime.ImageMetadata{
 						Ref:       info.Ref,
 						CreatedAt: info.CreatedAt,
 					})
@@ -258,7 +287,7 @@ func (s *EnvironmentService) toResponse(ctx context.Context, environment *model.
 	if latestBuild != nil {
 		response.LastBuild = latestBuild
 	}
-	if includeYAML {
+	if options.includeYAML {
 		payload, err := s.environments.ReadEnvironmentFile(ctx, environment.Name, "environment.yml")
 		if err != nil {
 			return nil, fmt.Errorf("read environment yaml: %w", err)
@@ -286,11 +315,11 @@ func (s *EnvironmentService) loadImageMetadata(ctx context.Context) (map[string]
 	return metadata, true
 }
 
-func imageMetadataToResponse(metadata runtime.ImageMetadata) *api.ImageMetadataResponse {
+func imageMetadataToView(metadata runtime.ImageMetadata) *model.ImageMetadataView {
 	if metadata.CreatedAt.IsZero() && metadata.TotalSizeBytes == 0 && metadata.UniqueSizeBytes == 0 {
 		return nil
 	}
-	response := &api.ImageMetadataResponse{
+	response := &model.ImageMetadataView{
 		CreatedAt: metadata.CreatedAt,
 	}
 	if metadata.TotalSizeBytes > 0 {
@@ -300,25 +329,4 @@ func imageMetadataToResponse(metadata runtime.ImageMetadata) *api.ImageMetadataR
 		response.UniqueSizeBytes = &metadata.UniqueSizeBytes
 	}
 	return response
-}
-
-func (s *EnvironmentService) toResponseDegraded(environment *model.Environment) *api.EnvironmentResponse {
-	return &api.EnvironmentResponse{
-		Name:            environment.Name,
-		Description:     environment.Description,
-		ImageRepository: environment.ImageRepository,
-		ImageTag:        environment.ImageTag,
-		ImageRef:        environment.ImageRef(),
-		DefaultCwd:      environment.DefaultCwd,
-		DefaultEnv:      model.CloneMap(environment.DefaultEnv),
-		AgentPrompt:     environment.AgentPrompt,
-		Mounts:          append([]model.Mount(nil), environment.Mounts...),
-		Resources:       environment.Resources,
-		Enabled:         environment.Enabled,
-		DefaultExecute:  environment.DefaultExecute.Clone(),
-		Build:           environment.Build.Clone(),
-		Available:       false,
-		CreatedAt:       environment.CreatedAt,
-		UpdatedAt:       environment.UpdatedAt,
-	}
 }

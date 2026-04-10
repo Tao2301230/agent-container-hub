@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"agent-container-hub/internal/api"
+	"agent-container-hub/internal/model"
 	"agent-container-hub/internal/runtime"
 	"agent-container-hub/internal/sandbox"
 	"agent-container-hub/internal/store"
@@ -26,30 +27,30 @@ const authCookieName = "agent-container-hub_auth"
 var uiFiles embed.FS
 
 type SessionService interface {
-	Create(context.Context, api.CreateSessionRequest) (*api.CreateSessionResponse, error)
-	CreateTemplate(context.Context) (*api.SessionCreateTemplateResponse, error)
-	Execute(context.Context, string, api.ExecuteSessionRequest) (*api.ExecuteSessionResponse, error)
-	Stop(context.Context, string) (*api.StopSessionResponse, error)
-	List(context.Context) ([]*api.SessionResponse, error)
-	Query(context.Context, store.SessionQuery) (*api.SessionListResponse, error)
-	Get(context.Context, string) (*api.SessionResponse, error)
-	ListExecutions(context.Context, string, store.Pagination) (*api.SessionExecutionListResponse, error)
+	Create(context.Context, model.CreateSessionRequest) (*model.CreateSessionResult, error)
+	CreateTemplate(context.Context) (*model.SessionCreateTemplate, error)
+	Execute(context.Context, string, model.ExecuteSessionRequest) (*model.ExecuteSessionResult, error)
+	Stop(context.Context, string) (*model.StopSessionResult, error)
+	List(context.Context) ([]*model.SessionView, error)
+	Query(context.Context, store.SessionQuery) (*model.SessionList, error)
+	Get(context.Context, string) (*model.SessionView, error)
+	ListExecutions(context.Context, string, store.Pagination) (*model.SessionExecutionList, error)
 }
 
 type EnvironmentService interface {
-	Upsert(context.Context, api.UpsertEnvironmentRequest) (*api.EnvironmentResponse, error)
-	Get(context.Context, string) (*api.EnvironmentResponse, error)
-	GetAgentPrompt(context.Context, string) (*api.EnvironmentAgentPromptResponse, error)
-	List(context.Context) ([]*api.EnvironmentResponse, error)
-	ListFiles(context.Context, string) ([]*api.EnvironmentFileResponse, error)
-	GetFile(context.Context, string, string) (*api.EnvironmentFileResponse, error)
-	PutFile(context.Context, string, string, string) (*api.EnvironmentFileResponse, error)
+	Upsert(context.Context, model.UpsertEnvironmentRequest) (*model.EnvironmentView, error)
+	Get(context.Context, string) (*model.EnvironmentView, error)
+	GetAgentPrompt(context.Context, string) (*model.EnvironmentAgentPrompt, error)
+	List(context.Context) ([]*model.EnvironmentView, error)
+	ListFiles(context.Context, string) ([]*model.EnvironmentFile, error)
+	GetFile(context.Context, string, string) (*model.EnvironmentFile, error)
+	PutFile(context.Context, string, string, string) (*model.EnvironmentFile, error)
 }
 
 type BuildService interface {
-	StartBuildJob(context.Context, string, api.BuildEnvironmentRequest) (*api.BuildJobResponse, error)
-	GetBuildJob(context.Context, string) (*api.BuildJobResponse, error)
-	SubscribeBuildJob(context.Context, string) (*api.BuildJobResponse, <-chan sandbox.BuildEvent, func(), error)
+	StartBuildJob(context.Context, string, model.BuildEnvironmentRequest) (*model.BuildJob, error)
+	GetBuildJob(context.Context, string) (*model.BuildJob, error)
+	SubscribeBuildJob(context.Context, string) (*model.BuildJob, <-chan sandbox.BuildEvent, func(), error)
 }
 
 type Server struct {
@@ -289,12 +290,12 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	response, err := s.sessions.Create(r.Context(), req)
+	response, err := s.sessions.Create(r.Context(), createSessionRequestToModel(req))
 	if err != nil {
 		s.writeMappedError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, createSessionResultToAPI(response))
 }
 
 func (s *Server) handleGetSessionCreateTemplate(w http.ResponseWriter, r *http.Request) {
@@ -303,7 +304,7 @@ func (s *Server) handleGetSessionCreateTemplate(w http.ResponseWriter, r *http.R
 		s.writeMappedError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, sessionCreateTemplateToAPI(response))
 }
 
 func (s *Server) handleExecuteSession(w http.ResponseWriter, r *http.Request) {
@@ -312,16 +313,16 @@ func (s *Server) handleExecuteSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	response, err := s.sessions.Execute(r.Context(), r.PathValue("id"), req)
+	response, err := s.sessions.Execute(r.Context(), r.PathValue("id"), executeSessionRequestToModel(req))
 	if err != nil {
 		s.writeMappedError(w, err)
 		return
 	}
-	if executeSucceeded(response) {
+	if response.Succeeded() {
 		writePlainText(w, http.StatusOK, response.Stdout)
 		return
 	}
-	writeJSON(w, http.StatusOK, executeErrorResponse(response))
+	writeJSON(w, http.StatusOK, executeSessionErrorResponse(response))
 }
 
 func (s *Server) handleStopSession(w http.ResponseWriter, r *http.Request) {
@@ -330,7 +331,7 @@ func (s *Server) handleStopSession(w http.ResponseWriter, r *http.Request) {
 		s.writeMappedError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, stopSessionResultToAPI(response))
 }
 
 func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
@@ -339,7 +340,7 @@ func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 		s.writeMappedError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, sessionsToAPI(response))
 }
 
 func (s *Server) handleGetSession(w http.ResponseWriter, r *http.Request) {
@@ -348,7 +349,7 @@ func (s *Server) handleGetSession(w http.ResponseWriter, r *http.Request) {
 		s.writeMappedError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, sessionViewToAPI(response))
 }
 
 func (s *Server) handleQuerySessions(w http.ResponseWriter, r *http.Request) {
@@ -365,7 +366,7 @@ func (s *Server) handleQuerySessions(w http.ResponseWriter, r *http.Request) {
 		s.writeMappedError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, sessionListToAPI(response))
 }
 
 func (s *Server) handleListSessionExecutions(w http.ResponseWriter, r *http.Request) {
@@ -377,7 +378,7 @@ func (s *Server) handleListSessionExecutions(w http.ResponseWriter, r *http.Requ
 		s.writeMappedError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, sessionExecutionListToAPI(response))
 }
 
 func (s *Server) handleListEnvironments(w http.ResponseWriter, r *http.Request) {
@@ -386,7 +387,7 @@ func (s *Server) handleListEnvironments(w http.ResponseWriter, r *http.Request) 
 		s.writeMappedError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, environmentsToAPI(response))
 }
 
 func (s *Server) handleListEnvironmentFiles(w http.ResponseWriter, r *http.Request) {
@@ -395,7 +396,7 @@ func (s *Server) handleListEnvironmentFiles(w http.ResponseWriter, r *http.Reque
 		s.writeMappedError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, environmentFilesToAPI(response))
 }
 
 func (s *Server) handleGetEnvironmentFile(w http.ResponseWriter, r *http.Request) {
@@ -404,7 +405,7 @@ func (s *Server) handleGetEnvironmentFile(w http.ResponseWriter, r *http.Request
 		s.writeMappedError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, environmentFileToAPI(response))
 }
 
 func (s *Server) handlePutEnvironmentFile(w http.ResponseWriter, r *http.Request) {
@@ -418,7 +419,7 @@ func (s *Server) handlePutEnvironmentFile(w http.ResponseWriter, r *http.Request
 		s.writeMappedError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, environmentFileToAPI(response))
 }
 
 func (s *Server) handleGetEnvironment(w http.ResponseWriter, r *http.Request) {
@@ -427,7 +428,7 @@ func (s *Server) handleGetEnvironment(w http.ResponseWriter, r *http.Request) {
 		s.writeMappedError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, environmentViewToAPI(response))
 }
 
 func (s *Server) handleGetEnvironmentAgentPrompt(w http.ResponseWriter, r *http.Request) {
@@ -436,7 +437,7 @@ func (s *Server) handleGetEnvironmentAgentPrompt(w http.ResponseWriter, r *http.
 		s.writeMappedError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, environmentAgentPromptToAPI(response))
 }
 
 func (s *Server) handleUpsertEnvironment(w http.ResponseWriter, r *http.Request) {
@@ -448,12 +449,12 @@ func (s *Server) handleUpsertEnvironment(w http.ResponseWriter, r *http.Request)
 	if pathName := strings.TrimSpace(r.PathValue("name")); pathName != "" {
 		req.Name = pathName
 	}
-	response, err := s.environments.Upsert(r.Context(), req)
+	response, err := s.environments.Upsert(r.Context(), upsertEnvironmentRequestToModel(req))
 	if err != nil {
 		s.writeMappedError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, environmentViewToAPI(response))
 }
 
 func (s *Server) handleStartBuildJob(w http.ResponseWriter, r *http.Request) {
@@ -465,12 +466,12 @@ func (s *Server) handleStartBuildJob(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	response, err := s.builds.StartBuildJob(r.Context(), r.PathValue("name"), req)
+	response, err := s.builds.StartBuildJob(r.Context(), r.PathValue("name"), buildEnvironmentRequestToModel(req))
 	if err != nil {
 		s.writeMappedError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, buildJobToAPI(response))
 }
 
 func (s *Server) handleGetBuildJob(w http.ResponseWriter, r *http.Request) {
@@ -479,7 +480,7 @@ func (s *Server) handleGetBuildJob(w http.ResponseWriter, r *http.Request) {
 		s.writeMappedError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, buildJobToAPI(response))
 }
 
 func (s *Server) handleBuildJobEvents(w http.ResponseWriter, r *http.Request) {
@@ -499,11 +500,11 @@ func (s *Server) handleBuildJobEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	writeSSEEvent(w, sandbox.BuildEventSnapshot, snapshot)
+	writeSSEEvent(w, sandbox.BuildEventSnapshot, buildJobToAPI(snapshot))
 	flusher.Flush()
 
 	if events == nil {
-		writeSSEEvent(w, sandbox.BuildEventComplete, snapshot)
+		writeSSEEvent(w, sandbox.BuildEventComplete, buildJobToAPI(snapshot))
 		flusher.Flush()
 		return
 	}
@@ -529,7 +530,7 @@ func (s *Server) handleBuildJobEvents(w http.ResponseWriter, r *http.Request) {
 					"chunk": event.Chunk,
 				})
 			default:
-				writeSSEEvent(w, event.Type, event.Job)
+				writeSSEEvent(w, event.Type, buildJobToAPI(event.Job))
 			}
 			flusher.Flush()
 		}
@@ -595,23 +596,6 @@ func writePlainText(w http.ResponseWriter, status int, payload string) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(status)
 	_, _ = io.WriteString(w, payload)
-}
-
-func executeSucceeded(response *api.ExecuteSessionResponse) bool {
-	return response != nil && response.ExitCode == 0 && response.Stderr == ""
-}
-
-func executeErrorResponse(response *api.ExecuteSessionResponse) api.ExecuteSessionErrorResponse {
-	if response == nil {
-		return api.ExecuteSessionErrorResponse{Mode: "sandbox"}
-	}
-	return api.ExecuteSessionErrorResponse{
-		ExitCode:         response.ExitCode,
-		Mode:             "sandbox",
-		WorkingDirectory: response.WorkingDirectory,
-		Stdout:           response.Stdout,
-		Stderr:           response.Stderr,
-	}
 }
 
 func writeSSEEvent(w http.ResponseWriter, event string, payload any) {

@@ -178,10 +178,6 @@ image_tag() {
   printf '%s:%s-%s-%s\n' "$APP_NAME" "$VERSION" "$(image_target_os)" "$ARCH"
 }
 
-image_archive_name() {
-  printf '%s-image-%s-%s-%s.tar.gz\n' "$APP_NAME" "$VERSION" "$(image_target_os)" "$ARCH"
-}
-
 image_bundle_name() {
   printf '%s-image-%s-%s-%s.tar.gz\n' "$APP_NAME" "$VERSION" "$(image_target_os)" "$ARCH"
 }

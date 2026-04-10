@@ -12,7 +12,7 @@ require_image_tools
 
 cd "$REPO_ROOT"
 
-IMAGE_ARCHIVE_PATH="${IMAGE_ARCHIVE_PATH:-$RELEASE_DIR/$(image_archive_name)}"
+IMAGE_ARCHIVE_PATH="${IMAGE_ARCHIVE_PATH:-$RELEASE_DIR/$(image_bundle_name)}"
 
 build_and_export_image_archive "$IMAGE_ARCHIVE_PATH"
 

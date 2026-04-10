@@ -7,7 +7,7 @@ What is included:
 - .env.example
 - configs/environments/ runtime configs
 - images/*.tar.gz offline image archive
-- load-image.sh helper to import the bundled image into docker
+- load-image.sh helper to import the bundled image into a local container engine
 
 Bundle layout notes:
 - configs/environments is treated as the live environment config source.
@@ -18,7 +18,7 @@ Recommended deployment flow:
 1. Extract the tar.gz bundle.
 2. Change into the extracted agent-container-hub directory.
 3. Copy .env.example to .env and adjust values for the target host.
-4. Run ./load-image.sh to import the bundled image into the local docker daemon.
+4. Run ./load-image.sh to import the bundled image into the local docker or podman image store.
 5. Start containers using your deployment method of choice with the imported image tag.
 
 Notes:

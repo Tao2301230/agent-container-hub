@@ -15,7 +15,6 @@ command -v tar >/dev/null 2>&1 || die "tar is required"
 cd "$REPO_ROOT"
 
 IMAGE_TARGET_OS="$(image_target_os)"
-IMAGE_ARCHIVE_NAME="$(image_archive_name)"
 IMAGE_BUNDLE="$RELEASE_DIR/$(image_bundle_name)"
 
 echo "[release] image bundle VERSION=$VERSION TARGET_OS=$IMAGE_TARGET_OS ARCH=$ARCH"
@@ -35,7 +34,7 @@ chmod +x "$BUNDLE_ROOT/load-image.sh"
 
 tar --exclude='.DS_Store' -C "$REPO_ROOT/configs" -cf - environments | tar -C "$BUNDLE_ROOT/configs" -xf -
 
-IMAGE_ARCHIVE_PATH="$BUNDLE_ROOT/images/$IMAGE_ARCHIVE_NAME" bash "$SCRIPT_DIR/export-image.sh"
+IMAGE_ARCHIVE_PATH="$BUNDLE_ROOT/images/$(image_bundle_name)" bash "$SCRIPT_DIR/export-image.sh"
 
 mkdir -p "$RELEASE_DIR"
 tar -czf "$IMAGE_BUNDLE" -C "$TMP_DIR" "$APP_NAME"

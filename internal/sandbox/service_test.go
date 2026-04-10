@@ -2355,7 +2355,7 @@ func TestSubscribeBuildJobStreamsLogsAndCompletion(t *testing.T) {
 				sawLog = sawLog || strings.Contains(event.Chunk, "layer 1")
 			case BuildEventComplete:
 				sawComplete = true
-				if event.Job == nil || event.Job.Status != string(model.BuildJobStatusSucceeded) {
+				if event.Job == nil || event.Job.Status != model.BuildJobStatusSucceeded {
 					t.Fatalf("complete job = %+v, want succeeded", event.Job)
 				}
 			}
@@ -2539,9 +2539,23 @@ func TestReconcileExistingImagesSkipsLocalRuntime(t *testing.T) {
 type testServices struct {
 	store        store.AppStore
 	envs         store.EnvironmentStore
-	sessions     *SessionService
-	environments *EnvironmentService
-	builds       *BuildService
+	sessions     *testSessionService
+	environments *testEnvironmentService
+	builds       *testBuildService
+}
+
+type testSessionService struct {
+	svc   *SessionService
+	cfg   config.Config
+	locks *namedLock
+}
+
+type testEnvironmentService struct {
+	svc *EnvironmentService
+}
+
+type testBuildService struct {
+	svc *BuildService
 }
 
 func newTestServices(t *testing.T) (*testServices, func(), *fakeRuntime) {
@@ -2599,13 +2613,374 @@ func newTestServicesWithLogger(t *testing.T, configure func(*config.Config), log
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 	builds := NewBuildService(cfg, st, envs, fake, logger)
+	sessionService := NewSessionService(cfg, st, envs, fake, logger)
+	environmentService := NewEnvironmentService(cfg.ConfigRoot, envs, builds, fake, logger)
 	return &testServices{
 		store:        st,
 		envs:         envs,
-		sessions:     NewSessionService(cfg, st, envs, fake, logger),
-		environments: NewEnvironmentService(cfg.ConfigRoot, envs, builds, fake, logger),
-		builds:       builds,
+		sessions:     &testSessionService{svc: sessionService, cfg: cfg, locks: sessionService.locks},
+		environments: &testEnvironmentService{svc: environmentService},
+		builds:       &testBuildService{svc: builds},
 	}, func() { _ = st.Close() }, fake
+}
+
+func (s *testSessionService) Create(ctx context.Context, req api.CreateSessionRequest) (*api.CreateSessionResponse, error) {
+	result, err := s.svc.Create(ctx, model.CreateSessionRequest{
+		SessionID:       req.SessionID,
+		EnvironmentName: req.EnvironmentName,
+		Cwd:             req.Cwd,
+		Labels:          model.CloneMap(req.Labels),
+		Mounts:          append([]model.Mount(nil), req.Mounts...),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return testCreateSessionResultToAPI(result), nil
+}
+
+func (s *testSessionService) CreateTemplate(ctx context.Context) (*api.SessionCreateTemplateResponse, error) {
+	result, err := s.svc.CreateTemplate(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &api.SessionCreateTemplateResponse{
+		MountTemplateRoot: result.MountTemplateRoot,
+		DefaultMounts:     append([]model.Mount(nil), result.DefaultMounts...),
+	}, nil
+}
+
+func (s *testSessionService) Execute(ctx context.Context, sessionID string, req api.ExecuteSessionRequest) (*model.ExecuteSessionResult, error) {
+	return s.svc.Execute(ctx, sessionID, model.ExecuteSessionRequest{
+		Command:   req.Command,
+		Args:      append([]string(nil), req.Args...),
+		Cwd:       req.Cwd,
+		TimeoutMS: req.TimeoutMS,
+	})
+}
+
+func (s *testSessionService) Stop(ctx context.Context, sessionID string) (*api.StopSessionResponse, error) {
+	result, err := s.svc.Stop(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	return &api.StopSessionResponse{
+		SessionID:  result.SessionID,
+		Status:     string(result.Status),
+		DurationMS: result.DurationMS,
+	}, nil
+}
+
+func (s *testSessionService) List(ctx context.Context) ([]*api.SessionResponse, error) {
+	items, err := s.svc.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	response := make([]*api.SessionResponse, 0, len(items))
+	for _, item := range items {
+		response = append(response, testSessionViewToAPI(item))
+	}
+	return response, nil
+}
+
+func (s *testSessionService) Query(ctx context.Context, query store.SessionQuery) (*api.SessionListResponse, error) {
+	result, err := s.svc.Query(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]*api.SessionResponse, 0, len(result.Items))
+	for _, item := range result.Items {
+		items = append(items, testSessionViewToAPI(item))
+	}
+	return &api.SessionListResponse{
+		Items:    items,
+		Total:    result.Total,
+		Page:     result.Page,
+		PageSize: result.PageSize,
+	}, nil
+}
+
+func (s *testSessionService) Get(ctx context.Context, sessionID string) (*api.SessionResponse, error) {
+	result, err := s.svc.Get(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	return testSessionViewToAPI(result), nil
+}
+
+func (s *testSessionService) ListExecutions(ctx context.Context, sessionID string, pagination store.Pagination) (*api.SessionExecutionListResponse, error) {
+	result, err := s.svc.ListExecutions(ctx, sessionID, pagination)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]*api.SessionExecutionResponse, 0, len(result.Items))
+	for _, item := range result.Items {
+		items = append(items, &api.SessionExecutionResponse{
+			ID:              item.ID,
+			SessionID:       item.SessionID,
+			Command:         item.Command,
+			Args:            append([]string(nil), item.Args...),
+			Cwd:             item.Cwd,
+			TimeoutMS:       item.TimeoutMS,
+			ExitCode:        item.ExitCode,
+			Stdout:          item.Stdout,
+			Stderr:          item.Stderr,
+			StdoutTruncated: item.StdoutTruncated,
+			StderrTruncated: item.StderrTruncated,
+			TimedOut:        item.TimedOut,
+			DurationMS:      item.DurationMS,
+			StartedAt:       item.StartedAt,
+			FinishedAt:      item.FinishedAt,
+		})
+	}
+	return &api.SessionExecutionListResponse{
+		Items:    items,
+		Total:    result.Total,
+		Page:     result.Page,
+		PageSize: result.PageSize,
+	}, nil
+}
+
+func (s *testSessionService) Reconcile(ctx context.Context) error {
+	return s.svc.Reconcile(ctx)
+}
+
+func (s *testEnvironmentService) Upsert(ctx context.Context, req api.UpsertEnvironmentRequest) (*api.EnvironmentResponse, error) {
+	result, err := s.svc.Upsert(ctx, model.UpsertEnvironmentRequest{
+		Name:            req.Name,
+		Description:     req.Description,
+		ImageRepository: req.ImageRepository,
+		ImageTag:        req.ImageTag,
+		DefaultCwd:      req.DefaultCwd,
+		DefaultEnv:      model.CloneMap(req.DefaultEnv),
+		AgentPrompt:     req.AgentPrompt,
+		Mounts:          append([]model.Mount(nil), req.Mounts...),
+		Resources:       req.Resources,
+		Enabled:         req.Enabled,
+		DefaultExecute:  req.DefaultExecute.Clone(),
+		Build:           req.Build.Clone(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return testEnvironmentViewToAPI(result), nil
+}
+
+func (s *testEnvironmentService) Get(ctx context.Context, name string) (*api.EnvironmentResponse, error) {
+	result, err := s.svc.Get(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	return testEnvironmentViewToAPI(result), nil
+}
+
+func (s *testEnvironmentService) List(ctx context.Context) ([]*api.EnvironmentResponse, error) {
+	items, err := s.svc.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	response := make([]*api.EnvironmentResponse, 0, len(items))
+	for _, item := range items {
+		response = append(response, testEnvironmentViewToAPI(item))
+	}
+	return response, nil
+}
+
+func (s *testEnvironmentService) GetAgentPrompt(ctx context.Context, name string) (*api.EnvironmentAgentPromptResponse, error) {
+	result, err := s.svc.GetAgentPrompt(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	return &api.EnvironmentAgentPromptResponse{
+		EnvironmentName: result.EnvironmentName,
+		HasPrompt:       result.HasPrompt,
+		Prompt:          result.Prompt,
+		UpdatedAt:       result.UpdatedAt,
+	}, nil
+}
+
+func (s *testEnvironmentService) ListFiles(ctx context.Context, name string) ([]*api.EnvironmentFileResponse, error) {
+	files, err := s.svc.ListFiles(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	response := make([]*api.EnvironmentFileResponse, 0, len(files))
+	for _, file := range files {
+		response = append(response, testEnvironmentFileToAPI(file))
+	}
+	return response, nil
+}
+
+func (s *testEnvironmentService) GetFile(ctx context.Context, name, relPath string) (*api.EnvironmentFileResponse, error) {
+	file, err := s.svc.GetFile(ctx, name, relPath)
+	if err != nil {
+		return nil, err
+	}
+	return testEnvironmentFileToAPI(file), nil
+}
+
+func (s *testEnvironmentService) PutFile(ctx context.Context, name, relPath, content string) (*api.EnvironmentFileResponse, error) {
+	file, err := s.svc.PutFile(ctx, name, relPath, content)
+	if err != nil {
+		return nil, err
+	}
+	return testEnvironmentFileToAPI(file), nil
+}
+
+func (s *testBuildService) StartBuildJob(ctx context.Context, name string, req api.BuildEnvironmentRequest) (*api.BuildJobResponse, error) {
+	result, err := s.svc.StartBuildJob(ctx, name, model.BuildEnvironmentRequest{Target: req.Target})
+	if err != nil {
+		return nil, err
+	}
+	return testBuildJobToAPI(result), nil
+}
+
+func (s *testBuildService) BuildEnvironment(ctx context.Context, name string) (*api.BuildJobResponse, error) {
+	result, err := s.svc.BuildEnvironment(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	return testBuildJobToAPI(result), nil
+}
+
+func (s *testBuildService) GetBuildJob(ctx context.Context, id string) (*api.BuildJobResponse, error) {
+	result, err := s.svc.GetBuildJob(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return testBuildJobToAPI(result), nil
+}
+
+func (s *testBuildService) LatestBuildJob(ctx context.Context, environmentName string) (*api.BuildJobResponse, error) {
+	result, err := s.svc.LatestBuildJob(ctx, environmentName)
+	if err != nil {
+		return nil, err
+	}
+	return testBuildJobToAPI(result), nil
+}
+
+func (s *testBuildService) SubscribeBuildJob(ctx context.Context, id string) (*api.BuildJobResponse, <-chan BuildEvent, func(), error) {
+	result, events, cancel, err := s.svc.SubscribeBuildJob(ctx, id)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if events == nil {
+		return testBuildJobToAPI(result), nil, cancel, nil
+	}
+	wrapped := make(chan BuildEvent, 32)
+	go func() {
+		defer close(wrapped)
+		for event := range events {
+			wrapped <- BuildEvent{
+				Type:  event.Type,
+				Job:   event.Job,
+				Chunk: event.Chunk,
+			}
+		}
+	}()
+	return testBuildJobToAPI(result), wrapped, cancel, nil
+}
+
+func (s *testBuildService) ReconcileExistingImages(ctx context.Context) error {
+	return s.svc.ReconcileExistingImages(ctx)
+}
+
+func testCreateSessionResultToAPI(result *model.CreateSessionResult) *api.CreateSessionResponse {
+	if result == nil {
+		return nil
+	}
+	return &api.CreateSessionResponse{
+		SessionResponse: *testSessionViewToAPI(&result.SessionView),
+		DurationMS:      result.DurationMS,
+	}
+}
+
+func testSessionViewToAPI(view *model.SessionView) *api.SessionResponse {
+	if view == nil {
+		return nil
+	}
+	return &api.SessionResponse{
+		SessionID:       view.SessionID,
+		EnvironmentName: view.EnvironmentName,
+		ContainerID:     view.ContainerID,
+		Image:           view.Image,
+		DefaultCwd:      view.DefaultCwd,
+		RootfsPath:      view.RootfsPath,
+		Labels:          model.CloneMap(view.Labels),
+		Resources:       view.Resources,
+		Mounts:          append([]model.Mount(nil), view.Mounts...),
+		CreatedAt:       view.CreatedAt,
+		Status:          string(view.Status),
+		StoppedAt:       view.StoppedAt,
+	}
+}
+
+func testEnvironmentViewToAPI(view *model.EnvironmentView) *api.EnvironmentResponse {
+	if view == nil {
+		return nil
+	}
+	return &api.EnvironmentResponse{
+		Name:                  view.Name,
+		Description:           view.Description,
+		ImageRepository:       view.ImageRepository,
+		ImageTag:              view.ImageTag,
+		ImageRef:              view.ImageRef,
+		Available:             view.Available,
+		DefaultCwd:            view.DefaultCwd,
+		DefaultEnv:            model.CloneMap(view.DefaultEnv),
+		AgentPrompt:           view.AgentPrompt,
+		Mounts:                append([]model.Mount(nil), view.Mounts...),
+		Resources:             view.Resources,
+		Enabled:               view.Enabled,
+		DefaultExecute:        view.DefaultExecute.Clone(),
+		Build:                 view.Build.Clone(),
+		ImageMetadata:         testImageMetadataToAPI(view.ImageMetadata),
+		AvailableBuildTargets: append([]string(nil), view.AvailableBuildTargets...),
+		CreatedAt:             view.CreatedAt,
+		UpdatedAt:             view.UpdatedAt,
+		LastBuild:             testBuildJobToAPI(view.LastBuild),
+		YAML:                  view.YAML,
+	}
+}
+
+func testImageMetadataToAPI(view *model.ImageMetadataView) *api.ImageMetadataResponse {
+	if view == nil {
+		return nil
+	}
+	return &api.ImageMetadataResponse{
+		CreatedAt:       view.CreatedAt,
+		TotalSizeBytes:  view.TotalSizeBytes,
+		UniqueSizeBytes: view.UniqueSizeBytes,
+	}
+}
+
+func testEnvironmentFileToAPI(file *model.EnvironmentFile) *api.EnvironmentFileResponse {
+	if file == nil {
+		return nil
+	}
+	return &api.EnvironmentFileResponse{
+		Path:       file.Path,
+		Size:       file.Size,
+		ModifiedAt: file.ModifiedAt,
+		Type:       file.Type,
+		Content:    file.Content,
+	}
+}
+
+func testBuildJobToAPI(job *model.BuildJob) *api.BuildJobResponse {
+	if job == nil {
+		return nil
+	}
+	return &api.BuildJobResponse{
+		ID:              job.ID,
+		EnvironmentName: job.EnvironmentName,
+		ImageRef:        job.ImageRef,
+		Target:          job.Target,
+		Status:          string(job.Status),
+		Output:          job.Output,
+		Error:           job.Error,
+		StartedAt:       job.StartedAt,
+		FinishedAt:      job.FinishedAt,
+	}
 }
 
 type fakeRuntime struct {

@@ -67,8 +67,18 @@ program_prepare_runtime_dirs() {
   mkdir -p "$DATA_DIR" "$ROOTFS_DIR" "$BUILD_DIR" "$RUN_DIR"
 }
 
+program_read_pid() {
+  [[ -f "$PID_FILE" ]] || return 1
+  local pid
+  pid="$(cat "$PID_FILE")"
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  printf '%s\n' "$pid"
+}
+
 program_backend_running() {
-  [[ -f "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE")" >/dev/null 2>&1
+  local pid
+  pid="$(program_read_pid)" || return 1
+  kill -0 "$pid" >/dev/null 2>&1
 }
 
 program_clear_stale_pid() {
@@ -76,7 +86,7 @@ program_clear_stale_pid() {
     return
   fi
   local pid
-  pid="$(cat "$PID_FILE")"
+  pid="$(program_read_pid || true)"
   if [[ -n "$pid" ]] && kill -0 "$pid" >/dev/null 2>&1; then
     program_die "$APP_NAME is already running with pid $pid"
   fi
@@ -112,8 +122,8 @@ program_stop_backend() {
     return
   fi
 
-  pid="$(cat "$PID_FILE")"
-  [[ -n "$pid" ]] || program_die "pid file is empty: $PID_FILE"
+  pid="$(program_read_pid || true)"
+  [[ -n "$pid" ]] || program_die "pid file must contain a numeric pid: $PID_FILE"
 
   if ! kill -0 "$pid" >/dev/null 2>&1; then
     rm -f "$PID_FILE"

@@ -94,8 +94,6 @@ build_program_bundle() {
   archive_bundle_dir "$stage_root" "$APP_NAME" "$bundle_archive" "$archive_format"
 
   echo "[release] done: $bundle_archive"
-  rm -rf "$tmp_dir"
-  trap - RETURN
 }
 
 while read -r target_os target_arch; do
