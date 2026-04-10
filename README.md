@@ -430,10 +430,10 @@ cd configs/environments/shell && make build-cn
 cd configs/environments/toolbox && make build-cn
 ```
 
-- `daily-office build-cn` 主要优化 apt/pip/npm 等包管理源
-- `daily-office-pro build-cn` 主要优化 apt/pip/npm 等包管理源，并保留 MiniMax 办公工具链所需的额外运行时
+- `daily-office build-cn` 默认使用 `CN_PYTHON_BASE_IMAGE`、`CN_APT_MIRROR`、`CN_APT_SECURITY_MIRROR`、`CN_PIP_INDEX_URL`、`CN_NPM_REGISTRY` 指向国内镜像与包源；`HIMALAYA_DOWNLOAD_URL`、`DBX_DOWNLOAD_URL`、`HTTPX_DOWNLOAD_URL` 仍为通用覆盖项
+- `daily-office-pro build-cn` 默认使用 `CN_PYTHON_BASE_IMAGE`、`CN_APT_MIRROR`、`CN_APT_SECURITY_MIRROR`、`CN_PIP_INDEX_URL`、`CN_NPM_REGISTRY` 指向国内镜像与包源，并保留 MiniMax 办公工具链所需的额外运行时；`HIMALAYA_DOWNLOAD_URL`、`DBX_DOWNLOAD_URL`、`HTTPX_DOWNLOAD_URL` 仍为通用覆盖项
 - `shell build-cn` 默认使用 DaoCloud 当前推荐的 BusyBox 国内镜像地址 `m.daocloud.io/docker.io/library/busybox:latest`，必要时可覆盖 `CN_BASE_IMAGE=...`
-- `toolbox build-cn` 默认使用 DaoCloud 当前推荐的 Python 国内镜像地址 `m.daocloud.io/docker.io/library/python:3.12-slim-bookworm`，并同时切换 apt 下载源；必要时可覆盖 `CN_PYTHON_BASE_IMAGE=...`
+- `toolbox build-cn` 默认使用 `CN_PYTHON_BASE_IMAGE`、`CN_APT_MIRROR`、`CN_APT_SECURITY_MIRROR` 指向国内镜像与 apt 下载源；`DBX_DOWNLOAD_URL`、`HTTPX_DOWNLOAD_URL`、`MOCK_DOWNLOAD_URL` 仍为通用覆盖项
 
 内置 `daily-office` 与 `daily-office-pro` 都通过环境目录中的 `Dockerfile` 构建镜像。`daily-office-pro` 运行时继续沿用只读 `/skills` 约定，推荐挂载：
 
