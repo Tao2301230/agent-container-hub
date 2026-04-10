@@ -26,9 +26,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 BUNDLE_ROOT="$TMP_DIR/$APP_NAME"
 mkdir -p \
   "$BUNDLE_ROOT/images" \
-  "$BUNDLE_ROOT/configs" \
-  "$BUNDLE_ROOT/data/rootfs" \
-  "$BUNDLE_ROOT/data/builds"
+  "$BUNDLE_ROOT/configs"
 
 cp "$REPO_ROOT/.env.example" "$BUNDLE_ROOT/.env.example"
 cp "$RELEASE_ASSETS_DIR/README.txt" "$BUNDLE_ROOT/README.txt"

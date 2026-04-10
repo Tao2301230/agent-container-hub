@@ -1,33 +1,27 @@
-agent-container-hub release bundle
+agent-container-hub program bundle
 
-This bundle is intended for host-process deployment on the target OS encoded in the tarball name.
-For example:
-- *-linux-amd64.tar.gz / *-linux-arm64.tar.gz: Linux hosts
-- *-darwin-amd64.tar.gz / *-darwin-arm64.tar.gz: macOS hosts
-
-It does not include container images or source code build tooling.
+This bundle is intended for host-process deployment on the target OS encoded in the archive name.
+It includes the backend binary, runtime configs, and platform entry scripts. The management UI remains embedded in the Go binary; there is no separate frontend/dist tree in this project.
 
 What is included:
-- agent-container-hub binary
+- manifest.json
 - .env.example
+- README.txt
+- backend/agent-container-hub(.exe)
 - configs/environments/ runtime configs
-- start.sh / stop.sh
-- systemd/agent-container-hub.service (Linux bundles only)
+- current-platform deploy/start/stop entry scripts
+- scripts/program-common.{sh|ps1}
 
 Deployment steps:
-1. Extract the tar.gz bundle.
+1. Extract the archive for the matching host OS.
 2. Change into the extracted agent-container-hub directory.
 3. Copy .env.example to .env and adjust paths, bind address, auth token, and ENGINE if needed.
-4. If ENGINE is left empty or set to docker/podman, make sure that engine is installed and the service user can access it.
-5. If you need to run without Docker Desktop, set ENGINE=local explicitly. This keeps the API shape but runs commands on the host without container isolation or image builds.
-6. Start with ./start.sh or ./start.sh --daemon.
+4. Run ./deploy.sh on macOS/Linux or ./deploy.ps1 on Windows to validate the bundle and create runtime directories.
+5. Start with ./start.sh or ./start.sh --daemon on macOS/Linux, or ./start.ps1 / ./start.ps1 -Daemon on Windows.
+6. Use ./stop.sh or ./stop.ps1 only for daemon-mode processes managed by the bundle scripts.
 
-systemd:
-- Linux bundles include a template unit at systemd/agent-container-hub.service.
-- Replace /opt/agent-container-hub with your real install path before enabling it.
-
-Notes:
-- configs/environments is treated as the live environment config source.
-- data/rootfs and data/builds are kept outside the binary and should live on persistent storage in production.
-- stop.sh only stops processes started by ./start.sh --daemon.
-- The host OS must match the bundle name; a Linux host bundle will not run on macOS, and vice versa.
+Layout notes:
+- manifest.json is the host-facing bundle contract and declares the embedded UI entry at /app.
+- configs/environments remains in the bundle because it is the runtime source of truth for environment definitions.
+- data/ and run/ are created on first deploy/start and are not pre-created in the archive.
+- If ENGINE is empty, the service auto-detects docker or podman. Set ENGINE=local to skip container-engine checks and run in local mode.

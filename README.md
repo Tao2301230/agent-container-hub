@@ -124,23 +124,27 @@ make release-image VERSION=v0.1.0
 产物输出到：
 
 ```text
-dist/release/agent-container-hub-program-vX.Y.Z-darwin-arm64.tar.gz
-dist/release/agent-container-hub-program-vX.Y.Z-windows-amd64.tar.gz
-dist/release/agent-container-hub-image-bundle-vX.Y.Z-linux-<arch>.tar.gz
+dist/release/agent-container-hub-vX.Y.Z-darwin-arm64.tar.gz
+dist/release/agent-container-hub-vX.Y.Z-windows-amd64.zip
+dist/release/agent-container-hub-image-vX.Y.Z-linux-<arch>.tar.gz
 ```
 
 program bundle 解压后包含：
 
-- `agent-container-hub` 或 `agent-container-hub.exe`
+- `manifest.json`
 - `.env.example`
 - `README.txt`
+- `backend/agent-container-hub` 或 `backend/agent-container-hub.exe`
 - `configs/environments/` live config
-- `data/rootfs/` 与 `data/builds/` 空目录
+- 当前平台根目录 `deploy/start/stop`
+- `scripts/program-common.{sh|ps1}`
 
 其中：
 
-- `darwin/arm64` bundle 包含 `start.sh` / `stop.sh`
-- `windows/amd64` bundle 包含 `release-scripts/windows/`
+- `darwin/arm64` bundle 使用 `.tar.gz` 并包含 `deploy.sh` / `start.sh` / `stop.sh`
+- `windows/amd64` bundle 使用 `.zip` 并包含 `deploy.ps1` / `start.ps1` / `stop.ps1`
+- `data/` 与 `run/` 由 `deploy` / `start` 在首次运行时创建，不预置到压缩包里
+- 管理站 UI 继续内嵌在 Go 二进制中，不提供独立 `frontend/dist`
 
 image bundle 解压后包含：
 
@@ -149,12 +153,11 @@ image bundle 解压后包含：
 - `load-image.sh`
 - `images/agent-container-hub-image-vX.Y.Z-linux-<arch>.tar.gz`
 - `configs/environments/` live config
-- `data/rootfs/` 与 `data/builds/` 空目录
 
 导入镜像：
 
 ```bash
-tar -xzf dist/release/agent-container-hub-image-bundle-v0.1.0-linux-<arch>.tar.gz
+tar -xzf dist/release/agent-container-hub-image-v0.1.0-linux-<arch>.tar.gz
 cd agent-container-hub
 ./load-image.sh
 ```
@@ -552,9 +555,10 @@ build:
 
 ```bash
 make release VERSION=v0.1.0
-tar -xzf dist/release/agent-container-hub-program-v0.1.0-darwin-<arch>.tar.gz
+tar -xzf dist/release/agent-container-hub-v0.1.0-darwin-<arch>.tar.gz
 cd agent-container-hub
 cp .env.example .env
+./deploy.sh
 ./start.sh
 ```
 
@@ -576,7 +580,6 @@ ENGINE=local
 生产环境建议：
 
 - 将 `STATE_DB_PATH`、`CONFIG_ROOT`、`ROOTFS_ROOT`、`BUILD_ROOT` 指向持久化磁盘
-- 优先使用 bundle 内 `systemd/agent-container-hub.service` 模板托管进程
 - 对外监听时务必设置 `AUTH_TOKEN`
 - 预先确认宿主机容器引擎权限、镜像仓库登录状态和 socket 可用性
 - `configs/environments/` 是唯一真相来源；若升级 bundle 前本地改过环境配置，请先备份或合并
@@ -593,29 +596,33 @@ make docker-build
 
 ```text
 agent-container-hub/
-  agent-container-hub
+  manifest.json
   .env.example
+  README.txt
+  deploy.sh
   start.sh
   stop.sh
-  README.txt
-  systemd/
-    agent-container-hub.service
+  scripts/
+    program-common.sh
+  backend/
+    agent-container-hub
   configs/
     environments/
       shell/
       daily-office/
       daily-office-pro/
-  data/
-    rootfs/
-    builds/
 ```
 
 其中：
 
+- `manifest.json` 是 bundle 根目录固定契约，声明 API、后端入口、内嵌 UI 入口和平台脚本
+- `deploy.sh` 只做 bundle 校验和运行目录初始化
 - `start.sh` 默认前台运行，`./start.sh --daemon` 可切到后台
 - `.env` 里配置 `ENGINE=local` 时，`start.sh` 会跳过 Docker / Podman 检查并以本地模式启动
 - `stop.sh` 只负责停止 `--daemon` 模式启动的本地进程
-- systemd 模板里的 `/opt/agent-container-hub` 只是示例路径，部署时需要替换成真实安装目录
+- `data/` 与 `run/` 在 `deploy.sh` 或 `start.sh` 首次执行时按需创建
+- 当前项目继续交付 `configs/environments/`，因为它是运行时必需配置
+- 当前项目的管理站 UI 继续内嵌在 Go 二进制中，不提供外部静态资源目录
 - `ENGINE` 留空或设置为 `docker` / `podman` 时，运行期仍依赖宿主机对应的容器引擎可用
 
 ## 常见排查

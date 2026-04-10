@@ -104,3 +104,11 @@
 - 当前环境构建只支持平台托管 Dockerfile，不支持 Git 仓库拉取
 - 当前 UI 是轻量嵌入式管理站，不是独立前端工程
 - 当前镜像构建仍依赖宿主机容器引擎权限和 registry 登录状态
+
+## 8. 发布规范
+
+- Program Bundle 根目录固定包含 `manifest.json`、`.env.example`、`README.txt`、当前平台 `deploy/start/stop`、`scripts/program-common.*`、`backend/agent-container-hub(.exe)`、`configs/environments/`
+- Program Bundle 不预置空的 `data/`、`run/`；由 `deploy` / `start` 首次运行时创建
+- Program Bundle 对外命名为 `agent-container-hub-vX.Y.Z-<os>-<arch>.<ext>`，其中 Windows 使用 `.zip`
+- Image Bundle 对外命名为 `agent-container-hub-image-vX.Y.Z-linux-<arch>.tar.gz`
+- 本项目为对齐通用发布规范而保留两点裁剪：UI 继续内嵌在 Go 二进制中；`configs/environments/` 继续随 Bundle 交付

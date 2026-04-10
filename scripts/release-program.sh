@@ -9,8 +9,20 @@ PROGRAM_RELEASE_ASSETS_DIR="$SCRIPT_DIR/release-assets/program"
 . "$SCRIPT_DIR/release-common.sh"
 
 require_release_tools
-command -v tar >/dev/null 2>&1 || die "tar is required"
 resolve_release_context
+
+require_dir "$PROGRAM_RELEASE_ASSETS_DIR"
+require_file "$PROGRAM_RELEASE_ASSETS_DIR/README.txt"
+require_file "$PROGRAM_RELEASE_ASSETS_DIR/unix/deploy.sh"
+require_file "$PROGRAM_RELEASE_ASSETS_DIR/unix/start.sh"
+require_file "$PROGRAM_RELEASE_ASSETS_DIR/unix/stop.sh"
+require_file "$PROGRAM_RELEASE_ASSETS_DIR/unix/program-common.sh"
+require_file "$PROGRAM_RELEASE_ASSETS_DIR/windows/deploy.ps1"
+require_file "$PROGRAM_RELEASE_ASSETS_DIR/windows/start.ps1"
+require_file "$PROGRAM_RELEASE_ASSETS_DIR/windows/stop.ps1"
+require_file "$PROGRAM_RELEASE_ASSETS_DIR/windows/program-common.ps1"
+require_file "$REPO_ROOT/.env.example"
+require_dir "$REPO_ROOT/configs/environments"
 
 cd "$REPO_ROOT"
 
@@ -18,60 +30,70 @@ build_program_bundle() {
   local target_os="$1"
   local target_arch="$2"
   local binary_name
-  local bundle_name
-  local bundle_tar
+  local archive_format
+  local bundle_archive
   local tmp_dir
+  local stage_root
   local bundle_root
+  local backend_dir
+  local scripts_dir
+  local backend_path
+  local backend_entry
 
   binary_name="$(binary_name_for_os "$target_os")"
-  bundle_name="${APP_NAME}-program-${VERSION}-${target_os}-${target_arch}"
-  bundle_tar="$RELEASE_DIR/${bundle_name}.tar.gz"
+  archive_format="$(archive_format_for_os "$target_os")"
+  bundle_archive="$RELEASE_DIR/$(program_bundle_filename "$VERSION" "$target_os" "$target_arch" "$archive_format")"
 
   echo "[release] program VERSION=$VERSION TARGET_OS=$target_os ARCH=$target_arch"
 
   tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/agent-container-hub-program-release.XXXXXX")"
   trap 'rm -rf "$tmp_dir"' RETURN
 
-  bundle_root="$tmp_dir/$APP_NAME"
-  mkdir -p \
-    "$bundle_root/configs" \
-    "$bundle_root/data/rootfs" \
-    "$bundle_root/data/builds"
+  stage_root="$tmp_dir/stage"
+  bundle_root="$stage_root/$APP_NAME"
+  backend_dir="$bundle_root/backend"
+  scripts_dir="$bundle_root/scripts"
+  backend_path="$backend_dir/$binary_name"
+  backend_entry="backend/$binary_name"
+
+  mkdir -p "$backend_dir" "$scripts_dir" "$bundle_root/configs"
 
   echo "[release] building program binary for $target_os..."
   CGO_ENABLED=0 GOOS="$target_os" GOARCH="$target_arch" \
     go build \
     -ldflags "-X main.buildVersion=$VERSION" \
-    -o "$bundle_root/$binary_name" \
+    -o "$backend_path" \
     ./cmd/agent-container-hub
 
   echo "[release] assembling program bundle for $target_os..."
   cp "$REPO_ROOT/.env.example" "$bundle_root/.env.example"
   cp "$PROGRAM_RELEASE_ASSETS_DIR/README.txt" "$bundle_root/README.txt"
-
-  if [[ "$target_os" == "windows" ]]; then
-    mkdir -p "$bundle_root/release-scripts/windows"
-    cp "$PROGRAM_RELEASE_ASSETS_DIR/windows/start.ps1" "$bundle_root/release-scripts/windows/start.ps1"
-    cp "$PROGRAM_RELEASE_ASSETS_DIR/windows/stop.ps1" "$bundle_root/release-scripts/windows/stop.ps1"
-    cp "$PROGRAM_RELEASE_ASSETS_DIR/windows/start.cmd" "$bundle_root/release-scripts/windows/start.cmd"
-    cp "$PROGRAM_RELEASE_ASSETS_DIR/windows/stop.cmd" "$bundle_root/release-scripts/windows/stop.cmd"
-  else
-    cp "$PROGRAM_RELEASE_ASSETS_DIR/unix/start.sh" "$bundle_root/start.sh"
-    cp "$PROGRAM_RELEASE_ASSETS_DIR/unix/stop.sh" "$bundle_root/stop.sh"
-    chmod +x "$bundle_root/$binary_name" "$bundle_root/start.sh" "$bundle_root/stop.sh"
-  fi
-
-  if [[ "$target_os" == "linux" ]]; then
-    mkdir -p "$bundle_root/systemd"
-    cp "$PROGRAM_RELEASE_ASSETS_DIR/linux/systemd/agent-container-hub.service" "$bundle_root/systemd/agent-container-hub.service"
-  fi
+  write_program_manifest "$bundle_root/manifest.json" "$target_os" "$target_arch" "$backend_entry"
 
   tar --exclude='.DS_Store' -C "$REPO_ROOT/configs" -cf - environments | tar -C "$bundle_root/configs" -xf -
 
-  mkdir -p "$RELEASE_DIR"
-  tar -czf "$bundle_tar" -C "$tmp_dir" "$APP_NAME"
+  if [[ "$target_os" == "windows" ]]; then
+    cp "$PROGRAM_RELEASE_ASSETS_DIR/windows/deploy.ps1" "$bundle_root/deploy.ps1"
+    cp "$PROGRAM_RELEASE_ASSETS_DIR/windows/start.ps1" "$bundle_root/start.ps1"
+    cp "$PROGRAM_RELEASE_ASSETS_DIR/windows/stop.ps1" "$bundle_root/stop.ps1"
+    cp "$PROGRAM_RELEASE_ASSETS_DIR/windows/program-common.ps1" "$scripts_dir/program-common.ps1"
+  else
+    cp "$PROGRAM_RELEASE_ASSETS_DIR/unix/deploy.sh" "$bundle_root/deploy.sh"
+    cp "$PROGRAM_RELEASE_ASSETS_DIR/unix/start.sh" "$bundle_root/start.sh"
+    cp "$PROGRAM_RELEASE_ASSETS_DIR/unix/stop.sh" "$bundle_root/stop.sh"
+    cp "$PROGRAM_RELEASE_ASSETS_DIR/unix/program-common.sh" "$scripts_dir/program-common.sh"
+    chmod +x \
+      "$backend_path" \
+      "$bundle_root/deploy.sh" \
+      "$bundle_root/start.sh" \
+      "$bundle_root/stop.sh" \
+      "$scripts_dir/program-common.sh"
+  fi
 
-  echo "[release] done: $bundle_tar"
+  mkdir -p "$RELEASE_DIR"
+  archive_bundle_dir "$stage_root" "$APP_NAME" "$bundle_archive" "$archive_format"
+
+  echo "[release] done: $bundle_archive"
   rm -rf "$tmp_dir"
   trap - RETURN
 }
@@ -79,5 +101,6 @@ build_program_bundle() {
 while read -r target_os target_arch; do
   [[ -n "$target_os" ]] || continue
   [[ -n "$target_arch" ]] || die "missing ARCH for program target $target_os"
+  require_archive_tool_for_os "$target_os"
   build_program_bundle "$target_os" "$target_arch"
 done < <(parse_program_target_matrix)

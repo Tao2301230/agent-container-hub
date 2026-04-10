@@ -8,6 +8,16 @@ die() {
   exit 1
 }
 
+require_file() {
+  local path="$1"
+  [[ -f "$path" ]] || die "required file not found: $path"
+}
+
+require_dir() {
+  local path="$1"
+  [[ -d "$path" ]] || die "required directory not found: $path"
+}
+
 detect_arch() {
   case "$(uname -m)" in
     x86_64|amd64) echo "amd64" ;;
@@ -58,6 +68,50 @@ validate_target_os() {
   esac
 }
 
+archive_format_for_os() {
+  local target_os="$1"
+  validate_target_os "$target_os"
+  case "$target_os" in
+    windows) printf 'zip\n' ;;
+    *) printf 'tar.gz\n' ;;
+  esac
+}
+
+require_archive_tool_for_os() {
+  local target_os="$1"
+  local archive_format
+  archive_format="$(archive_format_for_os "$target_os")"
+  case "$archive_format" in
+    tar.gz) command -v tar >/dev/null 2>&1 || die "tar is required for $target_os bundles" ;;
+    zip) command -v zip >/dev/null 2>&1 || die "zip is required for $target_os bundles" ;;
+    *) die "unsupported archive format: $archive_format" ;;
+  esac
+}
+
+archive_bundle_dir() {
+  local stage_root="$1"
+  local bundle_dir_name="$2"
+  local output_path="$3"
+  local format="$4"
+
+  mkdir -p "$(dirname "$output_path")"
+
+  case "$format" in
+    tar.gz)
+      tar -czf "$output_path" -C "$stage_root" "$bundle_dir_name"
+      ;;
+    zip)
+      (
+        cd "$stage_root"
+        zip -qr "$output_path" "$bundle_dir_name"
+      )
+      ;;
+    *)
+      die "unsupported archive format: $format"
+      ;;
+  esac
+}
+
 binary_name_for_os() {
   local target_os="$1"
   validate_target_os "$target_os"
@@ -66,6 +120,14 @@ binary_name_for_os() {
     return
   fi
   printf '%s\n' "$APP_NAME"
+}
+
+program_bundle_filename() {
+  local version="$1"
+  local target_os="$2"
+  local target_arch="$3"
+  local archive_format="$4"
+  printf '%s-%s-%s-%s.%s\n' "$APP_NAME" "$version" "$target_os" "$target_arch" "$archive_format"
 }
 
 parse_program_targets() {
@@ -121,7 +183,7 @@ image_archive_name() {
 }
 
 image_bundle_name() {
-  printf '%s-image-bundle-%s-%s-%s.tar.gz\n' "$APP_NAME" "$VERSION" "$(image_target_os)" "$ARCH"
+  printf '%s-image-%s-%s-%s.tar.gz\n' "$APP_NAME" "$VERSION" "$(image_target_os)" "$ARCH"
 }
 
 build_and_export_image_archive() {
@@ -143,4 +205,47 @@ build_and_export_image_archive() {
     .
 
   docker save "$tag" | gzip -c >"$output_path"
+}
+
+write_program_manifest() {
+  local dest="$1"
+  local target_os="$2"
+  local target_arch="$3"
+  local backend_entry="$4"
+  local start_script="start.sh"
+  local stop_script="stop.sh"
+  local deploy_script="deploy.sh"
+
+  if [[ "$target_os" == "windows" ]]; then
+    start_script="start.ps1"
+    stop_script="stop.ps1"
+    deploy_script="deploy.ps1"
+  fi
+
+  cat >"$dest" <<EOF
+{
+  "id": "$APP_NAME",
+  "name": "$APP_NAME",
+  "version": "$VERSION",
+  "platform": {
+    "os": "$target_os",
+    "arch": "$target_arch"
+  },
+  "api": {
+    "enabled": true
+  },
+  "backend": {
+    "entry": "$backend_entry"
+  },
+  "ui": {
+    "embedded": true,
+    "entry": "/app"
+  },
+  "scripts": {
+    "start": "$start_script",
+    "stop": "$stop_script",
+    "deploy": "$deploy_script"
+  }
+}
+EOF
 }

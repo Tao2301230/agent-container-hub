@@ -11,7 +11,7 @@ What is included:
 
 Bundle layout notes:
 - configs/environments is treated as the live environment config source.
-- data/rootfs and data/builds are included as empty directories for persistent runtime state.
+- No empty data/ tree is pre-created in the bundle; runtime data should be provisioned by the deployment environment.
 - The image archive name encodes the exact version and architecture.
 
 Recommended deployment flow:

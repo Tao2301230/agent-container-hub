@@ -1,15 +1,12 @@
-[CmdletBinding()]
-param(
-  [switch]$Daemon
-)
-
 $ErrorActionPreference = 'Stop'
+
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 . (Join-Path $ScriptDir 'scripts/program-common.ps1')
 
 Set-Location $ScriptDir
 Test-ProgramBundle
-Import-ProgramEnv
-Test-ProgramEngine
 Initialize-ProgramRuntime
-Start-ProgramBackend -Daemon:$Daemon
+
+Write-Host "[program-deploy] bundle validated"
+Write-Host "[program-deploy] backend binary: $Script:BackendBin"
+Write-Host "[program-deploy] runtime directories prepared under $Script:DataDir and $Script:RunDir"
