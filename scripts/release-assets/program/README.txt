@@ -18,8 +18,9 @@ Deployment steps:
 1. Extract the tar.gz bundle.
 2. Change into the extracted agent-container-hub directory.
 3. Copy .env.example to .env and adjust paths, bind address, auth token, and ENGINE if needed.
-4. Make sure docker or podman is installed and the service user can access the container engine.
-5. Start with ./start.sh or ./start.sh --daemon.
+4. If ENGINE is left empty or set to docker/podman, make sure that engine is installed and the service user can access it.
+5. If you need to run without Docker Desktop, set ENGINE=local explicitly. This keeps the API shape but runs commands on the host without container isolation or image builds.
+6. Start with ./start.sh or ./start.sh --daemon.
 
 systemd:
 - Linux bundles include a template unit at systemd/agent-container-hub.service.

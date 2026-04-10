@@ -32,6 +32,9 @@ load_env() {
 
 check_engine() {
   if [[ -n "${ENGINE:-}" ]]; then
+    if [[ "$ENGINE" == "local" ]]; then
+      return
+    fi
     command -v "$ENGINE" >/dev/null 2>&1 || die "ENGINE=$ENGINE is not available in PATH"
     return
   fi

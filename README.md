@@ -565,6 +565,14 @@ make build
 ./agent-container-hub
 ```
 
+如果希望在没有 Docker Desktop 的场景下继续提供同一套 session API，可在 `.env` 中显式配置：
+
+```bash
+ENGINE=local
+```
+
+这会让服务以宿主机本地执行模式运行。它适合开发调试或把本机伪装成 sandbox backend，但不会提供容器隔离，也不支持镜像构建。
+
 生产环境建议：
 
 - 将 `STATE_DB_PATH`、`CONFIG_ROOT`、`ROOTFS_ROOT`、`BUILD_ROOT` 指向持久化磁盘
@@ -605,9 +613,10 @@ agent-container-hub/
 其中：
 
 - `start.sh` 默认前台运行，`./start.sh --daemon` 可切到后台
+- `.env` 里配置 `ENGINE=local` 时，`start.sh` 会跳过 Docker / Podman 检查并以本地模式启动
 - `stop.sh` 只负责停止 `--daemon` 模式启动的本地进程
 - systemd 模板里的 `/opt/agent-container-hub` 只是示例路径，部署时需要替换成真实安装目录
-- 这个项目虽然是非容器化部署，但运行期仍依赖宿主机 `docker` 或 `podman`
+- `ENGINE` 留空或设置为 `docker` / `podman` 时，运行期仍依赖宿主机对应的容器引擎可用
 
 ## 常见排查
 
