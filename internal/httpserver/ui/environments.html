@@ -31,7 +31,7 @@
 
 		<main class="shell">
 			<section class="panel environment-layout">
-				<div class="card stack">
+				<div class="card stack environment-list-panel">
 					<div class="toolbar">
 						<div>
 							<h2>Environments</h2>
@@ -47,7 +47,7 @@
 					<div class="list" id="environment-list"></div>
 				</div>
 
-				<div class="card stack">
+				<div class="card stack environment-detail-panel">
 					<div class="toolbar wrap">
 						<div>
 							<h2>Environment Details</h2>
@@ -57,6 +57,12 @@
 							</div>
 						</div>
 						<div class="actions">
+							<button
+								class="secondary mobile-only"
+								id="open-environment-list"
+							>
+								Switch Environment
+							</button>
 							<button id="save">Save Environment</button>
 							<button id="build">Build Image</button>
 						</div>
@@ -214,6 +220,43 @@ No environment selected.</pre
 			</section>
 		</main>
 		<div class="toast-container" id="toast-container"></div>
+
+		<div
+			class="modal-backdrop environment-picker-backdrop"
+			id="environment-picker-backdrop"
+		>
+			<div class="modal environment-picker-modal">
+				<div class="modal-header">
+					<div>
+						<h2>Environments</h2>
+						<div class="meta">
+							Choose an environment, then continue editing its
+							details.
+						</div>
+					</div>
+					<button
+						class="secondary modal-close"
+						data-close-modal="environment-picker-backdrop"
+					>
+						Close
+					</button>
+				</div>
+				<div class="modal-body">
+					<div class="stack">
+						<div class="toolbar">
+							<div class="meta">
+								The main view stays focused on environment
+								details on smaller screens.
+							</div>
+							<button class="ghost" id="refresh-environments-mobile">
+								Refresh
+							</button>
+						</div>
+						<div class="list" id="environment-list-mobile"></div>
+					</div>
+				</div>
+			</div>
+		</div>
 
 		<div class="modal-backdrop" id="build-target-backdrop">
 			<div class="modal narrow">

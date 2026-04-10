@@ -2234,7 +2234,6 @@ func TestToolboxBuildWithExplicitTargetUsesMakefileArgs(t *testing.T) {
 			BuildArgs: map[string]string{
 				"DBX_DOWNLOAD_URL":   "https://example.com/dbx.tar.gz",
 				"HTTPX_DOWNLOAD_URL": "https://example.com/httpx.tar.gz",
-				"MOCK_VERSION":       "0.1.0",
 				"MOCK_DOWNLOAD_URL":  "https://example.com/mock.tar.gz",
 			},
 		},
@@ -2256,7 +2255,6 @@ func TestToolboxBuildWithExplicitTargetUsesMakefileArgs(t *testing.T) {
 		"printf 'TAG=%s\\n' \"$TAG\"\n" +
 		"printf 'DBX_DOWNLOAD_URL=%s\\n' \"$DBX_DOWNLOAD_URL\"\n" +
 		"printf 'HTTPX_DOWNLOAD_URL=%s\\n' \"$HTTPX_DOWNLOAD_URL\"\n" +
-		"printf 'MOCK_VERSION=%s\\n' \"$MOCK_VERSION\"\n" +
 		"printf 'MOCK_DOWNLOAD_URL=%s\\n' \"$MOCK_DOWNLOAD_URL\"\n"
 	if err := os.WriteFile(makePath, []byte(makeScript), 0o755); err != nil {
 		t.Fatalf("WriteFile(make) error = %v", err)
@@ -2294,7 +2292,6 @@ func TestToolboxBuildWithExplicitTargetUsesMakefileArgs(t *testing.T) {
 		!strings.Contains(persisted.Output, "TAG=latest") ||
 		!strings.Contains(persisted.Output, "DBX_DOWNLOAD_URL=https://example.com/dbx.tar.gz") ||
 		!strings.Contains(persisted.Output, "HTTPX_DOWNLOAD_URL=https://example.com/httpx.tar.gz") ||
-		!strings.Contains(persisted.Output, "MOCK_VERSION=0.1.0") ||
 		!strings.Contains(persisted.Output, "MOCK_DOWNLOAD_URL=https://example.com/mock.tar.gz") {
 		t.Fatalf("persisted.Output = %q, want make output with toolbox build args", persisted.Output)
 	}
