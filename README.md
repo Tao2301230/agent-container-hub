@@ -617,14 +617,14 @@ agent-container-hub/
 
 其中：
 
-- `manifest.json` 是 bundle 根目录固定契约，声明 API、后端入口、内嵌 UI 入口和平台脚本
+- `manifest.json` 是 bundle 根目录固定契约，声明 frontend、API、后端入口和平台脚本
 - `deploy.sh` 只做 bundle 校验和运行目录初始化
 - `start.sh` 默认前台运行，`./start.sh --daemon` 可切到后台
 - `.env` 里配置 `ENGINE=local` 时，`start.sh` 会跳过 Docker / Podman 检查并以本地模式启动
 - `stop.sh` 只负责停止 `--daemon` 模式启动的本地进程
 - `data/` 与 `run/` 在 `deploy.sh` 或 `start.sh` 首次执行时按需创建
 - 当前项目继续交付 `configs/environments/`，因为它是运行时必需配置
-- 当前项目的管理站 UI 继续内嵌在 Go 二进制中，不提供外部静态资源目录
+- 当前项目的管理站 UI 继续内嵌在 Go 二进制中，不提供外部静态资源目录；manifest 的 `frontend` 字段会明确说明前端入口是 `/`、资源前缀是 `/ui/`，并且可直接访问服务端口
 - `ENGINE` 留空或设置为 `docker` / `podman` 时，运行期仍依赖宿主机对应的容器引擎可用
 
 ## 常见排查

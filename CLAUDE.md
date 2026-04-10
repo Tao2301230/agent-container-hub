@@ -108,6 +108,7 @@
 ## 8. 发布规范
 
 - Program Bundle 根目录固定包含 `manifest.json`、`.env.example`、`README.txt`、当前平台 `deploy/start/stop`、`scripts/program-common.*`、`backend/agent-container-hub(.exe)`、`configs/environments/`
+- `manifest.json` 中保留 `frontend` 字段，用于声明当前项目前端是内嵌托管：入口 `/`、静态资源前缀 `/ui/`、可直接访问服务端口、无需宿主 Node HTTP server 托管
 - Program Bundle 不预置空的 `data/`、`run/`；由 `deploy` / `start` 首次运行时创建
 - Program Bundle 对外命名为 `agent-container-hub-vX.Y.Z-<os>-<arch>.<ext>`，其中 Windows 使用 `.zip`
 - Image Bundle 对外命名为 `agent-container-hub-image-vX.Y.Z-linux-<arch>.tar.gz`

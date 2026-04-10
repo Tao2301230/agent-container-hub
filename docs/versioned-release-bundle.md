@@ -114,15 +114,18 @@ agent-container-hub/
     "os": "darwin",
     "arch": "arm64"
   },
+  "frontend": {
+    "mode": "embedded",
+    "entry": "/",
+    "assetsPrefix": "/ui/",
+    "directAccess": true,
+    "hostManaged": false
+  },
   "api": {
     "enabled": true
   },
   "backend": {
     "entry": "backend/agent-container-hub"
-  },
-  "ui": {
-    "embedded": true,
-    "entry": "/app"
   },
   "scripts": {
     "start": "start.sh",
@@ -134,9 +137,12 @@ agent-container-hub/
 
 字段语义：
 
+- `frontend.mode = embedded`：前端由 Go 二进制直接托管，而不是交付独立静态目录
+- `frontend.entry`：前端页面入口；当前项目直接访问服务根路径 `/`
+- `frontend.assetsPrefix`：内嵌静态资源前缀；当前为 `/ui/`
+- `frontend.directAccess = true`：直接访问服务监听端口即可使用前端，不依赖宿主额外转发
+- `frontend.hostManaged = false`：宿主机不需要再用 Node HTTP server 托管前端资源
 - `backend.entry`：后端可执行文件相对路径
-- `ui.embedded`：标记 UI 由二进制内嵌托管，而不是外部静态目录
-- `ui.entry`：管理站入口路径
 - `scripts.*`：当前平台实际存在的入口脚本
 
 ### 3.4 运行时要求

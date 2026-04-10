@@ -231,15 +231,18 @@ write_program_manifest() {
     "os": "$target_os",
     "arch": "$target_arch"
   },
+  "frontend": {
+    "mode": "embedded",
+    "entry": "/",
+    "assetsPrefix": "/ui/",
+    "directAccess": true,
+    "hostManaged": false
+  },
   "api": {
     "enabled": true
   },
   "backend": {
     "entry": "$backend_entry"
-  },
-  "ui": {
-    "embedded": true,
-    "entry": "/app"
   },
   "scripts": {
     "start": "$start_script",
