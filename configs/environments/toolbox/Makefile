@@ -1,6 +1,7 @@
 IMAGE_NAME ?= toolbox
 TAG ?= latest
 PYTHON_BASE_IMAGE ?= python:3.12-slim-bookworm
+CN_PYTHON_BASE_IMAGE ?= m.daocloud.io/docker.io/library/python:3.12-slim-bookworm
 APT_MIRROR ?= https://mirrors.tuna.tsinghua.edu.cn/debian
 APT_SECURITY_MIRROR ?= https://mirrors.tuna.tsinghua.edu.cn/debian-security
 DBX_DOWNLOAD_URL ?=
@@ -27,7 +28,7 @@ build:
 build-cn:
 	docker build \
 		--tag $(IMAGE_NAME):$(TAG) \
-		--build-arg PYTHON_BASE_IMAGE=$(PYTHON_BASE_IMAGE) \
+		--build-arg PYTHON_BASE_IMAGE=$(CN_PYTHON_BASE_IMAGE) \
 		--build-arg APT_MIRROR=$(APT_MIRROR) \
 		--build-arg APT_SECURITY_MIRROR=$(APT_SECURITY_MIRROR) \
 		--build-arg DBX_DOWNLOAD_URL=$(DBX_DOWNLOAD_URL) \
