@@ -12,6 +12,14 @@ var ValidEnvironmentName = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]{0,127}$`)
 var envKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 var buildContextNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]{0,127}$`)
 
+func ValidateEnvironmentName(name string) error {
+	name = strings.TrimSpace(name)
+	if !ValidEnvironmentName.MatchString(name) {
+		return fmt.Errorf("environment name must match %s", ValidEnvironmentName.String())
+	}
+	return nil
+}
+
 type Mount struct {
 	Source      string `json:"source" yaml:"source"`
 	Destination string `json:"destination" yaml:"destination"`

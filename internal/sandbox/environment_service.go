@@ -47,8 +47,8 @@ func NewEnvironmentService(configRoot string, environments store.EnvironmentStor
 
 func (s *EnvironmentService) Upsert(ctx context.Context, req model.UpsertEnvironmentRequest) (*model.EnvironmentView, error) {
 	name := strings.TrimSpace(req.Name)
-	if err := validateEnvironmentName(name); err != nil {
-		return nil, err
+	if err := model.ValidateEnvironmentName(name); err != nil {
+		return nil, fmt.Errorf("%w: %s", ErrValidation, err)
 	}
 	if !runtime.IsLocalRuntime(s.runtime.Name()) && strings.TrimSpace(req.ImageRepository) == "" {
 		return nil, fmt.Errorf("%w: image_repository is required", ErrValidation)
@@ -96,8 +96,8 @@ func (s *EnvironmentService) Upsert(ctx context.Context, req model.UpsertEnviron
 }
 
 func (s *EnvironmentService) Get(ctx context.Context, name string) (*model.EnvironmentView, error) {
-	if err := validateEnvironmentName(name); err != nil {
-		return nil, err
+	if err := model.ValidateEnvironmentName(name); err != nil {
+		return nil, fmt.Errorf("%w: %s", ErrValidation, err)
 	}
 	environment, err := s.environments.GetEnvironment(ctx, strings.TrimSpace(name))
 	if err != nil {
@@ -141,8 +141,8 @@ func (s *EnvironmentService) List(ctx context.Context) ([]*model.EnvironmentView
 }
 
 func (s *EnvironmentService) GetAgentPrompt(ctx context.Context, name string) (*model.EnvironmentAgentPrompt, error) {
-	if err := validateEnvironmentName(name); err != nil {
-		return nil, err
+	if err := model.ValidateEnvironmentName(name); err != nil {
+		return nil, fmt.Errorf("%w: %s", ErrValidation, err)
 	}
 	environment, err := s.environments.GetEnvironment(ctx, strings.TrimSpace(name))
 	if err != nil {
@@ -162,8 +162,8 @@ func (s *EnvironmentService) GetAgentPrompt(ctx context.Context, name string) (*
 }
 
 func (s *EnvironmentService) ListFiles(ctx context.Context, name string) ([]*model.EnvironmentFile, error) {
-	if err := validateEnvironmentName(name); err != nil {
-		return nil, err
+	if err := model.ValidateEnvironmentName(name); err != nil {
+		return nil, fmt.Errorf("%w: %s", ErrValidation, err)
 	}
 	files, err := s.environments.ListEnvironmentFiles(ctx, strings.TrimSpace(name))
 	if err != nil {
@@ -182,8 +182,8 @@ func (s *EnvironmentService) ListFiles(ctx context.Context, name string) ([]*mod
 }
 
 func (s *EnvironmentService) GetFile(ctx context.Context, name, relPath string) (*model.EnvironmentFile, error) {
-	if err := validateEnvironmentName(name); err != nil {
-		return nil, err
+	if err := model.ValidateEnvironmentName(name); err != nil {
+		return nil, fmt.Errorf("%w: %s", ErrValidation, err)
 	}
 	file, err := s.environments.ReadEnvironmentFile(ctx, strings.TrimSpace(name), relPath)
 	if err != nil {
@@ -199,8 +199,8 @@ func (s *EnvironmentService) GetFile(ctx context.Context, name, relPath string) 
 }
 
 func (s *EnvironmentService) PutFile(ctx context.Context, name, relPath, content string) (*model.EnvironmentFile, error) {
-	if err := validateEnvironmentName(name); err != nil {
-		return nil, err
+	if err := model.ValidateEnvironmentName(name); err != nil {
+		return nil, fmt.Errorf("%w: %s", ErrValidation, err)
 	}
 	if err := s.environments.WriteEnvironmentFile(ctx, strings.TrimSpace(name), relPath, []byte(content)); err != nil {
 		return nil, err

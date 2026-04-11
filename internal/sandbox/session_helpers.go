@@ -10,7 +10,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"agent-container-hub/internal/model"
 	"agent-container-hub/internal/runtime"
 )
 
@@ -36,14 +35,6 @@ func sessionDefaultCwd(requestCwd, environmentCwd string) string {
 func validateSessionID(sessionID string) error {
 	if !validSessionID.MatchString(strings.TrimSpace(sessionID)) {
 		return fmt.Errorf("%w: session_id must match %s", ErrValidation, validSessionID.String())
-	}
-	return nil
-}
-
-func validateEnvironmentName(name string) error {
-	name = strings.TrimSpace(name)
-	if !model.ValidEnvironmentName.MatchString(name) {
-		return fmt.Errorf("%w: environment name must match %s", ErrValidation, model.ValidEnvironmentName.String())
 	}
 	return nil
 }

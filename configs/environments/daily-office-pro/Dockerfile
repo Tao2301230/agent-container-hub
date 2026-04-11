@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1.7
 ARG PYTHON_BASE_IMAGE=python:3.12-slim-bookworm
 FROM ${PYTHON_BASE_IMAGE}
 
@@ -170,7 +169,10 @@ RUN --mount=type=bind,from=minimax_skills,source=minimax-pdf,target=/tmp/minimax
     set -euo pipefail; \
     cd /tmp/minimax-pdf; \
     bash scripts/make.sh check; \
-    python3 /tmp/minimax-xlsx/scripts/formula_check.py --help >/dev/null; \
+    tmp_pyc="$(mktemp)"; \
+    python3 -c 'import py_compile, sys; py_compile.compile(sys.argv[1], cfile=sys.argv[2], doraise=True)' \
+        /tmp/minimax-xlsx/scripts/formula_check.py "${tmp_pyc}"; \
+    rm -f "${tmp_pyc}"; \
     python3 /tmp/minimax-xlsx/scripts/libreoffice_recalc.py --check >/dev/null
 
 RUN set -euo pipefail; \

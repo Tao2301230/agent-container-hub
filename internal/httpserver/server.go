@@ -23,6 +23,12 @@ import (
 
 const authCookieName = "agent-container-hub_auth"
 
+const (
+	defaultJSONBodyLimitBytes            = 1 << 20
+	environmentFileJSONBodyLimitBytes   = 2 << 20
+	buildJobEventHeartbeatInterval      = 15 * time.Second
+)
+
 //go:embed ui/*
 var uiFiles embed.FS
 
@@ -254,8 +260,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req api.LoginRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+	if !decodeJSONBody(w, r, defaultJSONBodyLimitBytes, &req, false) {
 		return
 	}
 	if strings.TrimSpace(req.Token) != s.authToken {
@@ -286,8 +291,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	var req api.CreateSessionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+	if !decodeJSONBody(w, r, defaultJSONBodyLimitBytes, &req, false) {
 		return
 	}
 	response, err := s.sessions.Create(r.Context(), createSessionRequestToModel(req))
@@ -309,8 +313,7 @@ func (s *Server) handleGetSessionCreateTemplate(w http.ResponseWriter, r *http.R
 
 func (s *Server) handleExecuteSession(w http.ResponseWriter, r *http.Request) {
 	var req api.ExecuteSessionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+	if !decodeJSONBody(w, r, defaultJSONBodyLimitBytes, &req, false) {
 		return
 	}
 	response, err := s.sessions.Execute(r.Context(), r.PathValue("id"), executeSessionRequestToModel(req))
@@ -410,8 +413,7 @@ func (s *Server) handleGetEnvironmentFile(w http.ResponseWriter, r *http.Request
 
 func (s *Server) handlePutEnvironmentFile(w http.ResponseWriter, r *http.Request) {
 	var req api.PutEnvironmentFileRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+	if !decodeJSONBody(w, r, environmentFileJSONBodyLimitBytes, &req, false) {
 		return
 	}
 	response, err := s.environments.PutFile(r.Context(), r.PathValue("name"), r.PathValue("path"), req.Content)
@@ -442,8 +444,7 @@ func (s *Server) handleGetEnvironmentAgentPrompt(w http.ResponseWriter, r *http.
 
 func (s *Server) handleUpsertEnvironment(w http.ResponseWriter, r *http.Request) {
 	var req api.UpsertEnvironmentRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+	if !decodeJSONBody(w, r, defaultJSONBodyLimitBytes, &req, false) {
 		return
 	}
 	if pathName := strings.TrimSpace(r.PathValue("name")); pathName != "" {
@@ -459,12 +460,8 @@ func (s *Server) handleUpsertEnvironment(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) handleStartBuildJob(w http.ResponseWriter, r *http.Request) {
 	var req api.BuildEnvironmentRequest
-	if r.Body != nil {
-		decoder := json.NewDecoder(r.Body)
-		if err := decoder.Decode(&req); err != nil && !errors.Is(err, io.EOF) {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
-			return
-		}
+	if !decodeJSONBody(w, r, defaultJSONBodyLimitBytes, &req, true) {
+		return
 	}
 	response, err := s.builds.StartBuildJob(r.Context(), r.PathValue("name"), buildEnvironmentRequestToModel(req))
 	if err != nil {
@@ -509,7 +506,7 @@ func (s *Server) handleBuildJobEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	heartbeat := time.NewTicker(15 * time.Second)
+	heartbeat := time.NewTicker(buildJobEventHeartbeatInterval)
 	defer heartbeat.Stop()
 
 	for {
@@ -619,4 +616,29 @@ func parsePositiveInt(value string, fallback int) int {
 		return fallback
 	}
 	return parsed
+}
+
+func decodeJSONBody(w http.ResponseWriter, r *http.Request, maxBytes int64, target any, allowEmpty bool) bool {
+	if r.Body == nil {
+		if allowEmpty {
+			return true
+		}
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return false
+	}
+
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBytes))
+	if err := decoder.Decode(target); err != nil {
+		if errors.Is(err, io.EOF) && allowEmpty {
+			return true
+		}
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
+			return false
+		}
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return false
+	}
+	return true
 }

@@ -34,9 +34,9 @@ type ExecuteSessionResponse struct {
 }
 
 type ExecuteSessionErrorResponse struct {
-	ExitCode         int    `json:"exitCode"`
+	ExitCode         int    `json:"exit_code"`
 	Mode             string `json:"mode"`
-	WorkingDirectory string `json:"workingDirectory"`
+	WorkingDirectory string `json:"working_directory"`
 	Stdout           string `json:"stdout"`
 	Stderr           string `json:"stderr"`
 }

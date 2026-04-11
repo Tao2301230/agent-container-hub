@@ -827,10 +827,10 @@ function renderQuickExecuteResult(payload) {
       <div class="detail-box"><div class="meta">Session</div><strong>${escapeHTML(payload.sessionID)}</strong></div>
       <div class="detail-box"><div class="meta">Environment</div><strong>${escapeHTML(payload.environmentName)}</strong></div>
       <div class="detail-box"><div class="meta">Command</div><strong>${escapeHTML(payload.preset.command || "-")}</strong></div>
-      <div class="detail-box"><div class="meta">Cwd</div><strong>${escapeHTML(payload.response.workingDirectory || payload.preset.cwd || "(session default)")}</strong></div>
+      <div class="detail-box"><div class="meta">Cwd</div><strong>${escapeHTML(payload.response.working_directory || payload.preset.cwd || "(session default)")}</strong></div>
       <div class="detail-box"><div class="meta">Timeout</div><strong>${escapeHTML(payload.preset.timeout_ms || 0)} ms</strong></div>
       <div class="detail-box"><div class="meta">Mode</div><strong>${escapeHTML(payload.response.mode || "-")}</strong></div>
-      <div class="detail-box"><div class="meta">Exit Code</div><strong>${escapeHTML(payload.response.exitCode)}</strong></div>
+      <div class="detail-box"><div class="meta">Exit Code</div><strong>${escapeHTML(payload.response.exit_code)}</strong></div>
     </div>
 
     <div class="stack">

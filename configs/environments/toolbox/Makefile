@@ -1,7 +1,7 @@
 IMAGE_NAME ?= toolbox
 TAG ?= latest
 PYTHON_BASE_IMAGE ?= python:3.12-slim-bookworm
-CN_PYTHON_BASE_IMAGE ?= m.daocloud.io/docker.io/library/python:3.12-slim-bookworm
+CN_PYTHON_BASE_IMAGE ?= docker.1ms.run/library/python:3.12-slim-bookworm
 CN_APT_MIRROR ?= https://mirrors.tuna.tsinghua.edu.cn/debian
 CN_APT_SECURITY_MIRROR ?= https://mirrors.tuna.tsinghua.edu.cn/debian-security
 DBX_DOWNLOAD_URL ?=

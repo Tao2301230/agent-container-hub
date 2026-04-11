@@ -23,6 +23,8 @@ var (
 	ErrConflict   = errors.New("session configuration conflict")
 )
 
+const sessionStopTimeout = 5 * time.Second
+
 type SessionService struct {
 	cfg     config.Config
 	store   store.AppStore
@@ -49,8 +51,8 @@ func NewSessionService(cfg config.Config, st store.AppStore, envs store.Environm
 func (s *SessionService) Create(ctx context.Context, req model.CreateSessionRequest) (*model.CreateSessionResult, error) {
 	startedAt := time.Now().UTC()
 	environmentName := strings.TrimSpace(req.EnvironmentName)
-	if err := validateEnvironmentName(environmentName); err != nil {
-		return nil, err
+	if err := model.ValidateEnvironmentName(environmentName); err != nil {
+		return nil, fmt.Errorf("%w: %s", ErrValidation, err)
 	}
 
 	environment, err := s.envs.GetEnvironment(ctx, environmentName)
@@ -81,17 +83,18 @@ func (s *SessionService) Create(ctx context.Context, req model.CreateSessionRequ
 		return nil, fmt.Errorf("%w: %s", ErrValidation, err)
 	}
 
-	sessionID := strings.TrimSpace(req.SessionID)
-	if sessionID == "" {
+	req.SessionID = strings.TrimSpace(req.SessionID)
+	if req.SessionID == "" {
 		token, err := generateID()
 		if err != nil {
 			return nil, fmt.Errorf("generate session token: %w", err)
 		}
-		sessionID = "session-" + token
+		req.SessionID = "session-" + token
 	}
-	if err := validateSessionID(sessionID); err != nil {
+	if err := validateSessionID(req.SessionID); err != nil {
 		return nil, err
 	}
+	sessionID := req.SessionID
 
 	release, acquired := s.locks.tryLock(sessionID)
 	if !acquired {
@@ -112,7 +115,7 @@ func (s *SessionService) Create(ctx context.Context, req model.CreateSessionRequ
 
 	mounts, callerProvidesWorkspace, err := s.buildSessionMounts(environment.Mounts, req.Mounts, rootfsPath)
 	if err != nil {
-		_ = os.RemoveAll(rootfsPath)
+		s.warnIfCleanupFails("remove rootfs after mount preparation failed", rootfsPath, os.RemoveAll(rootfsPath))
 		return nil, err
 	}
 	if callerProvidesWorkspace {
@@ -149,7 +152,7 @@ func (s *SessionService) Create(ctx context.Context, req model.CreateSessionRequ
 		Labels:    containerLabels,
 	})
 	if err != nil {
-		_ = os.RemoveAll(rootfsPath)
+		s.warnIfCleanupFails("remove rootfs after session create failed", rootfsPath, os.RemoveAll(rootfsPath))
 		if errors.Is(err, runtime.ErrContainerExists) {
 			return nil, fmt.Errorf("%w: session already exists", ErrConflict)
 		}
@@ -171,8 +174,8 @@ func (s *SessionService) Create(ctx context.Context, req model.CreateSessionRequ
 			"container_id", info.ID,
 			"error", err,
 		)
-		_ = s.runtime.Remove(ctx, info.ID)
-		_ = os.RemoveAll(rootfsPath)
+		s.warnIfCleanupFails("remove container after session start failed", info.ID, s.runtime.Remove(ctx, info.ID))
+		s.warnIfCleanupFails("remove rootfs after session start failed", rootfsPath, os.RemoveAll(rootfsPath))
 		return nil, err
 	}
 
@@ -339,7 +342,7 @@ func (s *SessionService) Stop(ctx context.Context, sessionID string) (*model.Sto
 	if session.ContainerID != "" {
 		target = session.ContainerID
 	}
-	if err := s.runtime.Stop(ctx, target, 5*time.Second); err != nil && !errors.Is(err, runtime.ErrContainerNotFound) {
+	if err := s.runtime.Stop(ctx, target, sessionStopTimeout); err != nil && !errors.Is(err, runtime.ErrContainerNotFound) {
 		s.logger.Error("session stop failed",
 			"session_id", session.ID,
 			"container_id", target,
@@ -513,4 +516,11 @@ func (s *SessionService) markSessionUnavailable(ctx context.Context, session *mo
 		return err
 	}
 	return s.markSessionStopped(ctx, session, stoppedAt, s.cfg.DeleteRootfsOnStop)
+}
+
+func (s *SessionService) warnIfCleanupFails(action, target string, err error) {
+	if err == nil {
+		return
+	}
+	s.logger.Warn(action, "target", target, "error", err)
 }

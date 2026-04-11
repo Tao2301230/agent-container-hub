@@ -15,6 +15,8 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+const listSessionsBatchSize = 100
+
 type SQLiteStore struct {
 	db *sql.DB
 }
@@ -212,7 +214,7 @@ func (s *SQLiteStore) ListSessions(ctx context.Context) ([]*model.Session, error
 			Status: "active",
 			Pagination: Pagination{
 				Page:     page,
-				PageSize: 100,
+				PageSize: listSessionsBatchSize,
 			},
 		})
 		if err != nil {

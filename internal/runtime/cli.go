@@ -32,6 +32,8 @@ type commandResult struct {
 	exitCode int
 }
 
+const containerKeepAliveSleepSeconds = 3600
+
 func NewAutoProvider(explicit string, logger *slog.Logger) (Provider, error) {
 	if logger == nil {
 		logger = slog.Default()
@@ -88,7 +90,7 @@ func (p *CLIProvider) Create(ctx context.Context, opts CreateOptions) (Container
 		}
 		args = append(args, "--mount", spec)
 	}
-	args = append(args, opts.Image, "/bin/sh", "-lc", "trap exit TERM INT; while :; do sleep 3600; done")
+	args = append(args, opts.Image, "/bin/sh", "-lc", fmt.Sprintf("trap exit TERM INT; while :; do sleep %d; done", containerKeepAliveSleepSeconds))
 	result, err := p.runCommand(ctx, args...)
 	if err != nil {
 		if isAlreadyExists(result.stderr) {

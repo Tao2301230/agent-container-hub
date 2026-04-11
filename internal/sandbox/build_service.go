@@ -29,6 +29,9 @@ const (
 	discoveredImageBuildOutput = "discovered existing host image during startup sync"
 	BuildTargetDefault         = "build"
 	BuildTargetCN              = "build-cn"
+	buildSubscriberBufferSize  = 32
+	buildEventSendTimeout      = 250 * time.Millisecond
+	buildSmokeCheckTimeout     = 30 * time.Second
 )
 
 var makeTargetPatterns = map[string]*regexp.Regexp{
@@ -43,6 +46,7 @@ type BuildEvent struct {
 }
 
 type BuildService struct {
+	lifecycleCtx    context.Context
 	cfg             config.Config
 	store           store.BuildJobStore
 	envs            store.EnvironmentStore
@@ -73,11 +77,15 @@ func (s buildOutputSink) Write(payload []byte) (int, error) {
 	return len(payload), nil
 }
 
-func NewBuildService(cfg config.Config, st store.BuildJobStore, envs store.EnvironmentStore, provider runtime.Provider, logger *slog.Logger) *BuildService {
+func NewBuildService(lifecycleCtx context.Context, cfg config.Config, st store.BuildJobStore, envs store.EnvironmentStore, provider runtime.Provider, logger *slog.Logger) *BuildService {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	if lifecycleCtx == nil {
+		lifecycleCtx = context.Background()
+	}
 	return &BuildService{
+		lifecycleCtx:    lifecycleCtx,
 		cfg:             cfg,
 		store:           st,
 		envs:            envs,
@@ -130,7 +138,7 @@ func (s *BuildService) StartBuildJob(ctx context.Context, name string, req model
 	s.registerActiveJob(active)
 
 	if useMake {
-		go s.runMakeBuildJob(context.Background(), active, environment.Clone(), s.environmentConfigDir(environment.Name), target, buildContexts)
+		go s.runMakeBuildJob(s.newBuildJobContext(), active, environment.Clone(), s.environmentConfigDir(environment.Name), target, buildContexts)
 		return job.Clone(), nil
 	}
 
@@ -145,11 +153,11 @@ func (s *BuildService) StartBuildJob(ctx context.Context, name string, req model
 	if err := os.WriteFile(dockerfilePath, []byte(environment.Build.Dockerfile), 0o644); err != nil {
 		s.unregisterActiveJob(job.ID, environment.Name)
 		release()
-		_ = os.RemoveAll(buildDir)
+		s.warnIfCleanupFails("remove build dir after dockerfile write failed", buildDir, os.RemoveAll(buildDir))
 		return nil, fmt.Errorf("write dockerfile: %w", err)
 	}
 
-	go s.runDirectBuildJob(context.Background(), active, environment.Clone(), buildDir, dockerfilePath, buildContexts)
+	go s.runDirectBuildJob(s.newBuildJobContext(), active, environment.Clone(), buildDir, dockerfilePath, buildContexts)
 	return job.Clone(), nil
 }
 
@@ -297,8 +305,8 @@ func (s *BuildService) reconcileEnvironmentImage(ctx context.Context, environmen
 
 func (s *BuildService) prepareBuild(ctx context.Context, name string) (*model.Environment, func(), error) {
 	name = strings.TrimSpace(name)
-	if err := validateEnvironmentName(name); err != nil {
-		return nil, nil, err
+	if err := model.ValidateEnvironmentName(name); err != nil {
+		return nil, nil, fmt.Errorf("%w: %s", ErrValidation, err)
 	}
 	environment, err := s.envs.GetEnvironment(ctx, name)
 	if err != nil {
@@ -321,7 +329,7 @@ func (s *BuildService) prepareBuild(ctx context.Context, name string) (*model.En
 }
 
 func (s *BuildService) runDirectBuildJob(ctx context.Context, active *activeBuildJob, environment *model.Environment, buildDir string, dockerfilePath string, buildContexts map[string]string) {
-	defer os.RemoveAll(buildDir)
+	defer s.warnIfCleanupFails("remove build dir after direct build", buildDir, os.RemoveAll(buildDir))
 
 	result, err := s.runtime.Build(ctx, runtime.BuildOptions{
 		ContextDir:     buildDir,
@@ -441,7 +449,7 @@ func (s *BuildService) appendBuildOutput(active *activeBuildJob, chunk string) {
 	}
 	subscribers := active.appendOutput(chunk)
 	for _, subscriber := range subscribers {
-		sendBuildEvent(subscriber, BuildEvent{Type: BuildEventLog, Chunk: chunk})
+		s.sendBuildEvent(subscriber, BuildEvent{Type: BuildEventLog, Chunk: chunk})
 	}
 }
 
@@ -457,7 +465,7 @@ func (s *BuildService) setBuildOutput(active *activeBuildJob, output string) {
 func (s *BuildService) setBuildStatus(active *activeBuildJob, status model.BuildJobStatus) {
 	snapshot, subscribers := active.setStatus(status)
 	for _, subscriber := range subscribers {
-		sendBuildEvent(subscriber, BuildEvent{Type: BuildEventStatus, Job: snapshot})
+		s.sendBuildEvent(subscriber, BuildEvent{Type: BuildEventStatus, Job: snapshot})
 	}
 }
 
@@ -468,7 +476,7 @@ func (s *BuildService) finishBuildJob(active *activeBuildJob, status model.Build
 	}
 
 	for _, subscriber := range subscribers {
-		sendBuildEvent(subscriber, BuildEvent{Type: BuildEventComplete, Job: snapshot})
+		s.sendBuildEvent(subscriber, BuildEvent{Type: BuildEventComplete, Job: snapshot})
 		close(subscriber)
 	}
 
@@ -493,7 +501,7 @@ func (s *BuildService) runSmokeCheck(ctx context.Context, environment *model.Env
 	if err := os.MkdirAll(workspace, 0o755); err != nil {
 		return err
 	}
-	defer os.RemoveAll(workspace)
+	defer s.warnIfCleanupFails("remove smoke workspace after build", workspace, os.RemoveAll(workspace))
 
 	info, err := s.runtime.Create(ctx, runtime.CreateOptions{
 		Name:  "smoke-" + name,
@@ -512,7 +520,7 @@ func (s *BuildService) runSmokeCheck(ctx context.Context, environment *model.Env
 	if err != nil {
 		return err
 	}
-	defer func() { _ = s.runtime.Remove(context.Background(), info.ID) }()
+	defer s.warnIfCleanupFails("remove smoke container after build", info.ID, s.runtime.Remove(context.Background(), info.ID))
 
 	if _, err := s.runtime.Start(ctx, info.ID); err != nil {
 		return err
@@ -521,7 +529,7 @@ func (s *BuildService) runSmokeCheck(ctx context.Context, environment *model.Env
 		Command: environment.Build.SmokeCommand,
 		Args:    append([]string(nil), environment.Build.SmokeArgs...),
 		Cwd:     sessionDefaultCwd("", environment.DefaultCwd),
-		Timeout: 30 * time.Second,
+		Timeout: buildSmokeCheckTimeout,
 	})
 	if err != nil {
 		return err
@@ -690,7 +698,7 @@ func (j *activeBuildJob) snapshot() *model.BuildJob {
 }
 
 func (j *activeBuildJob) subscribe() (*model.BuildJob, <-chan BuildEvent, func(), error) {
-	ch := make(chan BuildEvent, 32)
+	ch := make(chan BuildEvent, buildSubscriberBufferSize)
 	j.mu.Lock()
 	id := j.nextSubscriberID
 	j.nextSubscriberID++
@@ -763,21 +771,38 @@ func isTerminalBuildStatus(status model.BuildJobStatus) bool {
 	}
 }
 
-func sendBuildEvent(ch chan BuildEvent, event BuildEvent) {
+func (s *BuildService) sendBuildEvent(ch chan BuildEvent, event BuildEvent) {
 	select {
 	case ch <- event:
 	default:
 		// Slow subscribers are allowed to drop incremental updates; they will
 		// resync from the next snapshot or terminal event.
-		if event.Type != BuildEventLog {
-			go func() {
-				defer func() {
-					_ = recover()
-				}()
-				ch <- event
-			}()
+		if event.Type == BuildEventLog {
+			return
+		}
+		timer := time.NewTimer(buildEventSendTimeout)
+		defer timer.Stop()
+		defer func() {
+			_ = recover()
+		}()
+		select {
+		case ch <- event:
+		case <-timer.C:
+			s.logger.Warn("dropping build event for slow subscriber", "event_type", event.Type)
 		}
 	}
+}
+
+func (s *BuildService) newBuildJobContext() context.Context {
+	ctx, _ := context.WithCancel(s.lifecycleCtx)
+	return ctx
+}
+
+func (s *BuildService) warnIfCleanupFails(action, target string, err error) {
+	if err == nil {
+		return
+	}
+	s.logger.Warn(action, "target", target, "error", err)
 }
 
 var _ io.Writer = buildOutputSink{}

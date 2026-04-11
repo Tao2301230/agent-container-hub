@@ -20,6 +20,11 @@ import (
 
 var buildVersion = "dev"
 
+const (
+	httpReadHeaderTimeout = 5 * time.Second
+	httpShutdownTimeout   = 10 * time.Second
+)
+
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
@@ -51,10 +56,10 @@ func main() {
 	}
 
 	sessionService := sandbox.NewSessionService(cfg, appStore, environmentStore, provider, logger)
-	buildService := sandbox.NewBuildService(cfg, appStore, environmentStore, provider, logger)
-	environmentService := sandbox.NewEnvironmentService(cfg.ConfigRoot, environmentStore, buildService, provider, logger)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	buildService := sandbox.NewBuildService(ctx, cfg, appStore, environmentStore, provider, logger)
+	environmentService := sandbox.NewEnvironmentService(cfg.ConfigRoot, environmentStore, buildService, provider, logger)
 
 	if err := sessionService.Reconcile(ctx); err != nil {
 		logger.Error("reconcile failed", "error", err)
@@ -70,12 +75,12 @@ func main() {
 			AccessLogEnabled: cfg.HTTPAccessLogEnabled,
 			ErrorLogEnabled:  cfg.HTTPErrorLogEnabled,
 		}),
-		ReadHeaderTimeout: 5 * time.Second,
+		ReadHeaderTimeout: httpReadHeaderTimeout,
 	}
 
 	go func() {
 		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), httpShutdownTimeout)
 		defer cancel()
 		_ = server.Shutdown(shutdownCtx)
 	}()
