@@ -208,6 +208,7 @@ write_program_manifest() {
   local target_os="$2"
   local target_arch="$3"
   local backend_entry="$4"
+  local asset_file_name="$5"
   local start_script="start.sh"
   local stop_script="stop.sh"
   local deploy_script="deploy.sh"
@@ -220,9 +221,11 @@ write_program_manifest() {
 
   cat >"$dest" <<EOF
 {
+  "kind": "builtin",
   "id": "$APP_NAME",
-  "name": "$APP_NAME",
+  "name": "Container Hub",
   "version": "$VERSION",
+  "description": "宿主机容器服务，负责为后续智能体运行时提供沙箱能力。",
   "platform": {
     "os": "$target_os",
     "arch": "$target_arch"
@@ -241,9 +244,44 @@ write_program_manifest() {
     "entry": "$backend_entry"
   },
   "scripts": {
-    "start": "$start_script",
+    "start": ["$start_script", "--daemon"],
     "stop": "$stop_script",
     "deploy": "$deploy_script"
+  },
+  "configFiles": [
+    {
+      "key": "env",
+      "label": ".env",
+      "relativePath": ".env",
+      "templateRelativePath": ".env.example",
+      "required": true
+    }
+  ],
+  "runtime": {
+    "pidRelativePath": "run/agent-container-hub.pid",
+    "logRelativePath": "run/agent-container-hub.log",
+    "requiredPaths": [
+      "backend/agent-container-hub",
+      "start.sh",
+      "stop.sh",
+      "deploy.sh",
+      "scripts/program-common.sh",
+      ".env.example",
+      "manifest.json",
+      "configs/environments"
+    ]
+  },
+  "web": {
+    "routePath": "/",
+    "portEnvKey": "BIND_ADDR",
+    "defaultPort": 11960
+  },
+  "prerequisites": [
+    "Docker 或 Podman"
+  ],
+  "desktop": {
+    "assetFileName": "$asset_file_name",
+    "bundleTopLevelDir": "$APP_NAME"
   }
 }
 EOF
