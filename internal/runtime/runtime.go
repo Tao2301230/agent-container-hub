@@ -18,11 +18,11 @@ var (
 )
 
 const (
-	ManagedByLabel   = "sandbox.managed_by"
-	SessionIDLabel   = "sandbox.session_id"
-	RootfsLabel      = "sandbox.rootfs"
-	CreatedAtLabel   = "sandbox.created_at"
-	DefaultMountPath = "/workspace"
+	ManagedByLabel    = "sandbox.managed_by"
+	SessionIDLabel    = "sandbox.session_id"
+	RootfsLabel       = "sandbox.rootfs"
+	CreatedAtLabel    = "sandbox.created_at"
+	DefaultMountPath  = "/workspace"
 	LocalProviderName = "local"
 	LocalImageRef     = "local://host"
 )
@@ -89,6 +89,7 @@ type BuildOptions struct {
 	DockerfilePath string
 	Image          string
 	BuildArgs      map[string]string
+	BuildContexts  map[string]string
 	OutputSink     io.Writer
 }
 

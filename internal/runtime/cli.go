@@ -9,8 +9,10 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -195,11 +197,28 @@ func (p *CLIProvider) Build(ctx context.Context, opts BuildOptions) (BuildResult
 	if err := model.ValidateEnvMap(opts.BuildArgs, "build argument"); err != nil {
 		return BuildResult{}, err
 	}
-	for key, value := range opts.BuildArgs {
+	if err := model.ValidateBuildContextMap(opts.BuildContexts); err != nil {
+		return BuildResult{}, err
+	}
+	buildArgKeys := sortedMapKeys(opts.BuildArgs)
+	for _, key := range buildArgKeys {
+		value := opts.BuildArgs[key]
 		args = append(args, "--build-arg", fmt.Sprintf("%s=%s", key, value))
 	}
+	var commandEnv []string
+	if len(opts.BuildContexts) > 0 {
+		if !strings.EqualFold(filepath.Base(p.binary), "docker") {
+			return BuildResult{}, fmt.Errorf("named build contexts require docker with BuildKit; runtime %q is not supported", p.binary)
+		}
+		commandEnv = append(commandEnv, "DOCKER_BUILDKIT=1")
+		buildContextKeys := sortedMapKeys(opts.BuildContexts)
+		for _, key := range buildContextKeys {
+			value := opts.BuildContexts[key]
+			args = append(args, "--build-context", fmt.Sprintf("%s=%s", key, value))
+		}
+	}
 	args = append(args, opts.ContextDir)
-	result, err := p.runStreamingCommand(ctx, opts.OutputSink, args...)
+	result, err := p.runStreamingCommandWithEnv(ctx, opts.OutputSink, commandEnv, args...)
 	finishedAt := time.Now().UTC()
 
 	buildResult := BuildResult{
@@ -387,7 +406,14 @@ func (p *CLIProvider) runCommand(ctx context.Context, args ...string) (commandRe
 }
 
 func (p *CLIProvider) runStreamingCommand(ctx context.Context, sink io.Writer, args ...string) (commandResult, error) {
+	return p.runStreamingCommandWithEnv(ctx, sink, nil, args...)
+}
+
+func (p *CLIProvider) runStreamingCommandWithEnv(ctx context.Context, sink io.Writer, env []string, args ...string) (commandResult, error) {
 	cmd := exec.CommandContext(ctx, p.binary, args...)
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		return commandResult{exitCode: -1}, err
@@ -696,4 +722,16 @@ func NormalizeMountSource(path string) string {
 		return abs
 	}
 	return clean
+}
+
+func sortedMapKeys(values map[string]string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }

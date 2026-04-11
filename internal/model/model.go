@@ -10,6 +10,7 @@ import (
 
 var ValidEnvironmentName = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]{0,127}$`)
 var envKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+var buildContextNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]{0,127}$`)
 
 type Mount struct {
 	Source      string `json:"source" yaml:"source"`
@@ -24,11 +25,12 @@ type ResourceSpec struct {
 }
 
 type BuildSpec struct {
-	Dockerfile   string            `json:"dockerfile,omitempty" yaml:"dockerfile,omitempty"`
-	BuildArgs    map[string]string `json:"build_args,omitempty" yaml:"build_args,omitempty"`
-	Notes        string            `json:"notes,omitempty" yaml:"notes,omitempty"`
-	SmokeCommand string            `json:"smoke_command,omitempty" yaml:"smoke_command,omitempty"`
-	SmokeArgs    []string          `json:"smoke_args,omitempty" yaml:"smoke_args,omitempty"`
+	Dockerfile    string            `json:"dockerfile,omitempty" yaml:"dockerfile,omitempty"`
+	BuildArgs     map[string]string `json:"build_args,omitempty" yaml:"build_args,omitempty"`
+	BuildContexts map[string]string `json:"contexts,omitempty" yaml:"contexts,omitempty"`
+	Notes         string            `json:"notes,omitempty" yaml:"notes,omitempty"`
+	SmokeCommand  string            `json:"smoke_command,omitempty" yaml:"smoke_command,omitempty"`
+	SmokeArgs     []string          `json:"smoke_args,omitempty" yaml:"smoke_args,omitempty"`
 }
 
 type ExecutePreset struct {
@@ -85,6 +87,7 @@ func (e *Environment) ImageRef() string {
 func (b BuildSpec) Clone() BuildSpec {
 	cp := b
 	cp.BuildArgs = CloneMap(b.BuildArgs)
+	cp.BuildContexts = CloneMap(b.BuildContexts)
 	cp.SmokeArgs = append([]string(nil), b.SmokeArgs...)
 	return cp
 }
@@ -203,6 +206,21 @@ func ValidateEnvMap(values map[string]string, kind string) error {
 		}
 		if containsControlChars(value) {
 			return fmt.Errorf("%s value for %q contains control characters", kind, key)
+		}
+	}
+	return nil
+}
+
+func ValidateBuildContextMap(values map[string]string) error {
+	for key, value := range values {
+		if !buildContextNamePattern.MatchString(key) {
+			return fmt.Errorf("build context name %q must match %s", key, buildContextNamePattern.String())
+		}
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("build context path for %q must not be empty", key)
+		}
+		if containsControlChars(value) {
+			return fmt.Errorf("build context path for %q contains control characters", key)
 		}
 	}
 	return nil

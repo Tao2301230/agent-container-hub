@@ -1260,6 +1260,66 @@ func TestDailyOfficeBuildUsesInlineDockerfileAndPassesBuildArgs(t *testing.T) {
 	}
 }
 
+func TestBuildEnvironmentResolvesRelativeBuildContexts(t *testing.T) {
+	t.Parallel()
+
+	services, cleanup, fake := newTestServices(t)
+	defer cleanup()
+
+	skillsRoot := filepath.Join(services.sessions.cfg.ConfigRoot, "skills-market")
+	if err := os.MkdirAll(skillsRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll(skillsRoot) error = %v", err)
+	}
+
+	if _, err := services.environments.Upsert(context.Background(), api.UpsertEnvironmentRequest{
+		Name:            "shell",
+		ImageRepository: "busybox",
+		ImageTag:        "latest",
+		Enabled:         true,
+		Build: model.BuildSpec{
+			Dockerfile:    "FROM busybox:latest\nCMD [\"/bin/sh\"]\n",
+			BuildContexts: map[string]string{"minimax_skills": "../../skills-market"},
+		},
+	}); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	if _, err := services.builds.BuildEnvironment(context.Background(), "shell"); err != nil {
+		t.Fatalf("BuildEnvironment() error = %v", err)
+	}
+	if got := fake.lastBuild.BuildContexts["minimax_skills"]; got != skillsRoot {
+		t.Fatalf("BuildContexts[minimax_skills] = %q, want %q", got, skillsRoot)
+	}
+}
+
+func TestBuildEnvironmentRejectsMissingBuildContext(t *testing.T) {
+	t.Parallel()
+
+	services, cleanup, fake := newTestServices(t)
+	defer cleanup()
+
+	if _, err := services.environments.Upsert(context.Background(), api.UpsertEnvironmentRequest{
+		Name:            "shell",
+		ImageRepository: "busybox",
+		ImageTag:        "latest",
+		Enabled:         true,
+		Build: model.BuildSpec{
+			Dockerfile:    "FROM busybox:latest\nCMD [\"/bin/sh\"]\n",
+			BuildContexts: map[string]string{"minimax_skills": "../../missing-skills"},
+		},
+	}); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	_, err := services.builds.BuildEnvironment(context.Background(), "shell")
+	if err == nil || !strings.Contains(err.Error(), `build context "minimax_skills"`) {
+		t.Fatalf("BuildEnvironment() error = %v, want missing build context", err)
+	}
+	if fake.lastBuild.Image != "" {
+		t.Fatalf("runtime Build should not run when build context resolution fails, got %+v", fake.lastBuild)
+	}
+}
+
 func TestDailyOfficeSessionAllowsExplicitSkillsMount(t *testing.T) {
 	t.Parallel()
 
@@ -1337,8 +1397,9 @@ func TestDailyOfficeProSessionAllowsExplicitSkillsMount(t *testing.T) {
 		ImageTag:        "latest",
 		DefaultCwd:      runtime.DefaultMountPath,
 		DefaultEnv: map[string]string{
-			"NODE_PATH": "/opt/daily-office-pro/node_modules",
-			"PATH":      expectedPath,
+			"NODE_PATH":      "/opt/daily-office-pro/node_modules",
+			"NUGET_PACKAGES": "/opt/daily-office-pro/nuget/packages",
+			"PATH":           expectedPath,
 		},
 		Enabled: true,
 		Build: model.BuildSpec{
@@ -1363,6 +1424,9 @@ func TestDailyOfficeProSessionAllowsExplicitSkillsMount(t *testing.T) {
 
 	if fake.lastCreate.Env["NODE_PATH"] != "/opt/daily-office-pro/node_modules" {
 		t.Fatalf("NODE_PATH = %q", fake.lastCreate.Env["NODE_PATH"])
+	}
+	if fake.lastCreate.Env["NUGET_PACKAGES"] != "/opt/daily-office-pro/nuget/packages" {
+		t.Fatalf("NUGET_PACKAGES = %q", fake.lastCreate.Env["NUGET_PACKAGES"])
 	}
 	if fake.lastCreate.Env["PATH"] != expectedPath {
 		t.Fatalf("PATH = %q", fake.lastCreate.Env["PATH"])
@@ -2294,6 +2358,62 @@ func TestToolboxBuildWithExplicitTargetUsesMakefileArgs(t *testing.T) {
 		!strings.Contains(persisted.Output, "HTTPX_DOWNLOAD_URL=https://example.com/httpx.tar.gz") ||
 		!strings.Contains(persisted.Output, "MOCK_DOWNLOAD_URL=https://example.com/mock.tar.gz") {
 		t.Fatalf("persisted.Output = %q, want make output with toolbox build args", persisted.Output)
+	}
+	if fake.lastBuild.Image != "" {
+		t.Fatalf("runtime Build should not run for make-based build, got %+v", fake.lastBuild)
+	}
+}
+
+func TestMakeBuildExportsResolvedBuildContexts(t *testing.T) {
+	services, cleanup, fake := newTestServices(t)
+	defer cleanup()
+
+	skillsRoot := filepath.Join(services.sessions.cfg.ConfigRoot, "skills-market")
+	if err := os.MkdirAll(skillsRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll(skillsRoot) error = %v", err)
+	}
+
+	if _, err := services.environments.Upsert(context.Background(), api.UpsertEnvironmentRequest{
+		Name:            "python",
+		ImageRepository: "python",
+		ImageTag:        "3.11",
+		Enabled:         true,
+		Build: model.BuildSpec{
+			Dockerfile:    "FROM python:3.11\n",
+			BuildContexts: map[string]string{"minimax_skills": "../../skills-market"},
+		},
+	}); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+	if _, err := services.environments.PutFile(context.Background(), "python", "Makefile", ".PHONY: build\nbuild:\n\t@echo DOCKER_BUILDKIT=$$DOCKER_BUILDKIT\n\t@echo BUILD_CONTEXT_MINIMAX_SKILLS=$$BUILD_CONTEXT_MINIMAX_SKILLS\n"); err != nil {
+		t.Fatalf("PutFile(Makefile) error = %v", err)
+	}
+
+	binDir := filepath.Join(t.TempDir(), "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(binDir) error = %v", err)
+	}
+	makePath := filepath.Join(binDir, "make")
+	makeScript := "#!/bin/sh\n" +
+		"printf 'DOCKER_BUILDKIT=%s\\n' \"$DOCKER_BUILDKIT\"\n" +
+		"printf 'BUILD_CONTEXT_MINIMAX_SKILLS=%s\\n' \"$BUILD_CONTEXT_MINIMAX_SKILLS\"\n"
+	if err := os.WriteFile(makePath, []byte(makeScript), 0o755); err != nil {
+		t.Fatalf("WriteFile(make) error = %v", err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	job, err := services.builds.BuildEnvironment(context.Background(), "python")
+	if err != nil {
+		t.Fatalf("BuildEnvironment() error = %v", err)
+	}
+	if job.Status != string(model.BuildJobStatusSucceeded) {
+		t.Fatalf("job.Status = %q, want succeeded", job.Status)
+	}
+	if !strings.Contains(job.Output, "DOCKER_BUILDKIT=1") {
+		t.Fatalf("job.Output = %q, want DOCKER_BUILDKIT", job.Output)
+	}
+	if !strings.Contains(job.Output, "BUILD_CONTEXT_MINIMAX_SKILLS="+skillsRoot) {
+		t.Fatalf("job.Output = %q, want resolved build context env", job.Output)
 	}
 	if fake.lastBuild.Image != "" {
 		t.Fatalf("runtime Build should not run for make-based build, got %+v", fake.lastBuild)

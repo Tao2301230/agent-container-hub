@@ -25,7 +25,8 @@ func TestFileEnvironmentStoreSaveAndGet(t *testing.T) {
 		AgentPrompt:     "Use /workspace for project files.\nCheck bundled tools before installing anything.\n",
 		Enabled:         true,
 		Build: model.BuildSpec{
-			Dockerfile: "FROM busybox:latest\n",
+			Dockerfile:    "FROM busybox:latest\n",
+			BuildContexts: map[string]string{"minimax_skills": "../../skills-market"},
 		},
 	}
 
@@ -65,6 +66,9 @@ func TestFileEnvironmentStoreSaveAndGet(t *testing.T) {
 	}
 	if stored.Build.Dockerfile != "FROM busybox:latest\n" {
 		t.Fatalf("GetEnvironment().Build.Dockerfile = %q", stored.Build.Dockerfile)
+	}
+	if stored.Build.BuildContexts["minimax_skills"] != "../../skills-market" {
+		t.Fatalf("GetEnvironment().Build.BuildContexts = %+v", stored.Build.BuildContexts)
 	}
 	if stored.AgentPrompt != environment.AgentPrompt {
 		t.Fatalf("GetEnvironment().AgentPrompt = %q, want %q", stored.AgentPrompt, environment.AgentPrompt)
@@ -257,6 +261,30 @@ func TestRepoToolboxEnvironmentConfigLoads(t *testing.T) {
 	}
 	if !strings.Contains(string(yamlFile.Content), "name: toolbox") || !strings.Contains(string(yamlFile.Content), "image_repository: toolbox") {
 		t.Fatalf("environment.yml = %q, want toolbox metadata", yamlFile.Content)
+	}
+}
+
+func TestRepoDailyOfficeProEnvironmentConfigLoadsBuildContexts(t *testing.T) {
+	t.Parallel()
+
+	root, err := filepath.Abs(filepath.Join("..", "..", "configs", "environments"))
+	if err != nil {
+		t.Fatalf("filepath.Abs() error = %v", err)
+	}
+	store, err := OpenFileEnvironmentStore(root)
+	if err != nil {
+		t.Fatalf("OpenFileEnvironmentStore() error = %v", err)
+	}
+
+	environment, err := store.GetEnvironment(context.Background(), "daily-office-pro")
+	if err != nil {
+		t.Fatalf("GetEnvironment() error = %v", err)
+	}
+	if environment.DefaultEnv["NUGET_PACKAGES"] != "/opt/daily-office-pro/nuget/packages" {
+		t.Fatalf("NUGET_PACKAGES = %q", environment.DefaultEnv["NUGET_PACKAGES"])
+	}
+	if environment.Build.BuildContexts["minimax_skills"] != "../../../../zenmind-env/skills-market" {
+		t.Fatalf("Build.BuildContexts = %+v", environment.Build.BuildContexts)
 	}
 }
 

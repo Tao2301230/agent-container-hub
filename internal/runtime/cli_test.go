@@ -380,6 +380,34 @@ func TestCLIProviderBuildDoesNotExposeUnclassifiedRuntimeFailure(t *testing.T) {
 	}
 }
 
+func TestCLIProviderBuildPassesNamedBuildContextsWithBuildKit(t *testing.T) {
+	t.Parallel()
+
+	binary, logPath := writeFakeRuntimeBinary(t)
+	provider := &CLIProvider{binary: binary}
+
+	_, err := provider.Build(context.Background(), BuildOptions{
+		ContextDir:    ".",
+		Image:         "daily-office-pro:latest",
+		BuildContexts: map[string]string{"minimax_skills": "/tmp/minimax-skills"},
+	})
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+
+	logData, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	logText := string(logData)
+	if !strings.Contains(logText, "DOCKER_BUILDKIT=1") {
+		t.Fatalf("Build() log = %q, want DOCKER_BUILDKIT=1", logText)
+	}
+	if !strings.Contains(logText, "--build-context minimax_skills=/tmp/minimax-skills") {
+		t.Fatalf("Build() log = %q, want named build context", logText)
+	}
+}
+
 func writeFakeRuntimeBinary(t *testing.T) (string, string) {
 	t.Helper()
 
@@ -387,7 +415,7 @@ func writeFakeRuntimeBinary(t *testing.T) (string, string) {
 	logPath := filepath.Join(tempDir, "calls.log")
 	scriptPath := filepath.Join(tempDir, "docker")
 	script := "#!/bin/sh\n" +
-		"printf '%s\\n' \"$*\" >> \"" + logPath + "\"\n" +
+		"printf 'DOCKER_BUILDKIT=%s %s\\n' \"$DOCKER_BUILDKIT\" \"$*\" >> \"" + logPath + "\"\n" +
 		"case \"$1\" in\n" +
 		"ps)\n" +
 		"  if [ \"$FAKE_RUNTIME_PS_MODE\" = 'empty' ]; then\n" +

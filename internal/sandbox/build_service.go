@@ -97,6 +97,11 @@ func (s *BuildService) StartBuildJob(ctx context.Context, name string, req model
 	if err != nil {
 		return nil, err
 	}
+	buildContexts, err := s.resolveBuildContexts(environment)
+	if err != nil {
+		release()
+		return nil, err
+	}
 	target, useMake, err := s.resolveBuildTarget(environment.Name, req.Target)
 	if err != nil {
 		release()
@@ -125,7 +130,7 @@ func (s *BuildService) StartBuildJob(ctx context.Context, name string, req model
 	s.registerActiveJob(active)
 
 	if useMake {
-		go s.runMakeBuildJob(context.Background(), active, environment.Clone(), s.environmentConfigDir(environment.Name), target)
+		go s.runMakeBuildJob(context.Background(), active, environment.Clone(), s.environmentConfigDir(environment.Name), target, buildContexts)
 		return job.Clone(), nil
 	}
 
@@ -144,7 +149,7 @@ func (s *BuildService) StartBuildJob(ctx context.Context, name string, req model
 		return nil, fmt.Errorf("write dockerfile: %w", err)
 	}
 
-	go s.runDirectBuildJob(context.Background(), active, environment.Clone(), buildDir, dockerfilePath)
+	go s.runDirectBuildJob(context.Background(), active, environment.Clone(), buildDir, dockerfilePath, buildContexts)
 	return job.Clone(), nil
 }
 
@@ -305,6 +310,9 @@ func (s *BuildService) prepareBuild(ctx context.Context, name string) (*model.En
 	if err := model.ValidateEnvMap(environment.Build.BuildArgs, "build.build_args"); err != nil {
 		return nil, nil, fmt.Errorf("%w: %s", ErrValidation, err)
 	}
+	if err := model.ValidateBuildContextMap(environment.Build.BuildContexts); err != nil {
+		return nil, nil, fmt.Errorf("%w: %s", ErrValidation, err)
+	}
 	release, acquired := s.locks.tryLock(environment.Name)
 	if !acquired {
 		return nil, nil, fmt.Errorf("%w: build already in progress for environment %q", ErrConflict, environment.Name)
@@ -312,7 +320,7 @@ func (s *BuildService) prepareBuild(ctx context.Context, name string) (*model.En
 	return environment, release, nil
 }
 
-func (s *BuildService) runDirectBuildJob(ctx context.Context, active *activeBuildJob, environment *model.Environment, buildDir string, dockerfilePath string) {
+func (s *BuildService) runDirectBuildJob(ctx context.Context, active *activeBuildJob, environment *model.Environment, buildDir string, dockerfilePath string, buildContexts map[string]string) {
 	defer os.RemoveAll(buildDir)
 
 	result, err := s.runtime.Build(ctx, runtime.BuildOptions{
@@ -320,6 +328,7 @@ func (s *BuildService) runDirectBuildJob(ctx context.Context, active *activeBuil
 		DockerfilePath: dockerfilePath,
 		Image:          environment.ImageRef(),
 		BuildArgs:      model.CloneMap(environment.Build.BuildArgs),
+		BuildContexts:  model.CloneMap(buildContexts),
 		OutputSink: buildOutputSink{write: func(chunk string) {
 			s.appendBuildOutput(active, chunk)
 		}},
@@ -356,8 +365,8 @@ func (s *BuildService) runDirectBuildJob(ctx context.Context, active *activeBuil
 	s.finishBuildJob(active, model.BuildJobStatusSucceeded, "", time.Now().UTC())
 }
 
-func (s *BuildService) runMakeBuildJob(ctx context.Context, active *activeBuildJob, environment *model.Environment, workingDir, target string) {
-	result, err := s.runMakeBuild(ctx, environment, workingDir, target, buildOutputSink{write: func(chunk string) {
+func (s *BuildService) runMakeBuildJob(ctx context.Context, active *activeBuildJob, environment *model.Environment, workingDir, target string, buildContexts map[string]string) {
+	result, err := s.runMakeBuild(ctx, environment, workingDir, target, buildContexts, buildOutputSink{write: func(chunk string) {
 		s.appendBuildOutput(active, chunk)
 	}})
 	if result.Output != "" {
@@ -548,11 +557,11 @@ func (s *BuildService) environmentConfigDir(name string) string {
 	return filepath.Join(s.cfg.ConfigRoot, "environments", strings.TrimSpace(name))
 }
 
-func (s *BuildService) runMakeBuild(ctx context.Context, environment *model.Environment, workingDir, target string, outputSink io.Writer) (runtime.BuildResult, error) {
+func (s *BuildService) runMakeBuild(ctx context.Context, environment *model.Environment, workingDir, target string, buildContexts map[string]string, outputSink io.Writer) (runtime.BuildResult, error) {
 	startedAt := time.Now().UTC()
 	cmd := exec.CommandContext(ctx, "make", target)
 	cmd.Dir = workingDir
-	cmd.Env = buildCommandEnv(environment)
+	cmd.Env = buildCommandEnv(environment, buildContexts)
 
 	var output bytes.Buffer
 	writer := io.MultiWriter(&output, outputSink)
@@ -572,14 +581,66 @@ func (s *BuildService) runMakeBuild(ctx context.Context, environment *model.Envi
 	return result, nil
 }
 
-func buildCommandEnv(environment *model.Environment) []string {
+func buildCommandEnv(environment *model.Environment, buildContexts map[string]string) []string {
 	env := append([]string(nil), os.Environ()...)
 	env = append(env, "IMAGE_NAME="+strings.TrimSpace(environment.ImageRepository))
 	env = append(env, "TAG="+strings.TrimSpace(environment.ImageTag))
 	for key, value := range environment.Build.BuildArgs {
 		env = append(env, key+"="+value)
 	}
+	if len(buildContexts) > 0 {
+		env = append(env, "DOCKER_BUILDKIT=1")
+		for key, value := range buildContexts {
+			env = append(env, buildContextEnvName(key)+"="+value)
+		}
+	}
 	return env
+}
+
+func (s *BuildService) resolveBuildContexts(environment *model.Environment) (map[string]string, error) {
+	if environment == nil || len(environment.Build.BuildContexts) == 0 {
+		return nil, nil
+	}
+	environmentDir := s.environmentConfigDir(environment.Name)
+	resolved := make(map[string]string, len(environment.Build.BuildContexts))
+	for key, rawPath := range environment.Build.BuildContexts {
+		candidate := strings.TrimSpace(rawPath)
+		if !filepath.IsAbs(candidate) {
+			candidate = filepath.Join(environmentDir, candidate)
+		}
+		absolute, err := filepath.Abs(candidate)
+		if err != nil {
+			return nil, fmt.Errorf("%w: resolve build context %q path %q: %v", ErrValidation, key, rawPath, err)
+		}
+		info, err := os.Stat(absolute)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return nil, fmt.Errorf("%w: build context %q path %q resolved to %q, which does not exist", ErrValidation, key, rawPath, absolute)
+			}
+			return nil, fmt.Errorf("%w: inspect build context %q path %q: %v", ErrValidation, key, absolute, err)
+		}
+		if !info.IsDir() {
+			return nil, fmt.Errorf("%w: build context %q path %q must be a directory", ErrValidation, key, absolute)
+		}
+		resolved[key] = absolute
+	}
+	return resolved, nil
+}
+
+func buildContextEnvName(name string) string {
+	var builder strings.Builder
+	builder.WriteString("BUILD_CONTEXT_")
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z':
+			builder.WriteByte(byte(r - 'a' + 'A'))
+		case r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			builder.WriteRune(r)
+		default:
+			builder.WriteByte('_')
+		}
+	}
+	return builder.String()
 }
 
 func AvailableBuildTargets(configRoot, environmentName string) ([]string, error) {

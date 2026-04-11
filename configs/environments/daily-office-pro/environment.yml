@@ -6,6 +6,7 @@ default_cwd: /workspace
 default_env:
   DAILY_OFFICE_HOME: /opt/daily-office-pro
   NODE_PATH: /opt/daily-office-pro/node_modules
+  NUGET_PACKAGES: /opt/daily-office-pro/nuget/packages
   PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
   PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: /usr/bin/chromium
   PATH: /opt/daily-office-pro/node_modules/.bin:/skills/skills/minimax-pdf/scripts:/skills/skills/minimax-xlsx/scripts:/skills/skills/minimax-docx/scripts:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -80,7 +81,9 @@ default_execute:
       ls /skills/ 2>/dev/null || echo '/skills not mounted'
   timeout_ms: 30000
 build:
-  notes: Runtime MiniMax skills can be mounted to /skills as read-only content when a session explicitly adds that mount, for example /Users/linlay-macmini/Project/minimax-skills -> /skills.
+  contexts:
+    minimax_skills: ../../../../zenmind-env/skills-market
+  notes: Runtime MiniMax skills can be mounted to /skills as read-only content when a session explicitly adds that mount, for example /Users/linlay-macmini/Project/minimax-skills -> /skills. The image prewarms the `minimax-docx` NuGet cache from the named `minimax_skills` build context and runs build-time compatibility checks against the mounted `minimax-pdf` and `minimax-xlsx` entrypoints.
   smoke_command: /bin/bash
   smoke_args:
     - -lc

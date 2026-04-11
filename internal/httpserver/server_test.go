@@ -1433,6 +1433,9 @@ func TestBuiltinDailyOfficeProEnvironmentIsListed(t *testing.T) {
 	if dailyOfficePro.DefaultEnv["NODE_PATH"] != "/opt/daily-office-pro/node_modules" {
 		t.Fatalf("daily-office-pro NODE_PATH = %q", dailyOfficePro.DefaultEnv["NODE_PATH"])
 	}
+	if dailyOfficePro.DefaultEnv["NUGET_PACKAGES"] != "/opt/daily-office-pro/nuget/packages" {
+		t.Fatalf("daily-office-pro NUGET_PACKAGES = %q", dailyOfficePro.DefaultEnv["NUGET_PACKAGES"])
+	}
 	for _, expected := range []string{
 		"/skills/skills/minimax-pdf/scripts",
 		"/skills/skills/minimax-xlsx/scripts",
@@ -1447,6 +1450,9 @@ func TestBuiltinDailyOfficeProEnvironmentIsListed(t *testing.T) {
 	}
 	if bytes.Contains([]byte(dailyOfficePro.Build.Dockerfile), []byte("ENTRYPOINT")) {
 		t.Fatalf("daily-office-pro Dockerfile unexpectedly contains ENTRYPOINT")
+	}
+	if dailyOfficePro.Build.BuildContexts["minimax_skills"] != "../../../../zenmind-env/skills-market" {
+		t.Fatalf("daily-office-pro build contexts = %+v", dailyOfficePro.Build.BuildContexts)
 	}
 	if len(dailyOfficePro.Build.SmokeArgs) == 0 {
 		t.Fatalf("daily-office-pro smoke args = %+v, want cli/python/node checks", dailyOfficePro.Build.SmokeArgs)

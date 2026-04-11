@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 ARG PYTHON_BASE_IMAGE=python:3.12-slim-bookworm
 FROM ${PYTHON_BASE_IMAGE}
 
@@ -23,6 +24,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
     PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium \
     DAILY_OFFICE_HOME=/opt/daily-office-pro \
+    NUGET_PACKAGES=/opt/daily-office-pro/nuget/packages \
     NODE_PATH=/opt/daily-office-pro/node_modules \
     PATH=/opt/daily-office-pro/node_modules/.bin:/skills/skills/minimax-pdf/scripts:/skills/skills/minimax-xlsx/scripts:/skills/skills/minimax-docx/scripts:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
@@ -145,7 +147,7 @@ RUN set -euo pipefail; \
         reportlab
 
 RUN set -euo pipefail; \
-    mkdir -p "${DAILY_OFFICE_HOME}"; \
+    mkdir -p "${DAILY_OFFICE_HOME}" "${NUGET_PACKAGES}"; \
     npm_registry="${NPM_REGISTRY:-https://registry.npmjs.org}"; \
     npm install --prefix "${DAILY_OFFICE_HOME}" --omit=dev --no-package-lock --registry "${npm_registry}" \
         playwright@^1.54.2 \
@@ -154,6 +156,22 @@ RUN set -euo pipefail; \
         react-dom@^18.3.1 \
         react-icons@^5.4.0 \
         sharp@^0.33.5
+
+RUN --mount=type=bind,from=minimax_skills,source=minimax-docx,target=/tmp/minimax-docx,ro \
+    set -euo pipefail; \
+    workdir="$(mktemp -d)"; \
+    cp -R /tmp/minimax-docx/. "${workdir}/"; \
+    dotnet restore "${workdir}/scripts/dotnet/MiniMaxAIDocx.slnx" --packages "${NUGET_PACKAGES}" --verbosity quiet; \
+    dotnet build "${workdir}/scripts/dotnet/MiniMaxAIDocx.slnx" --configuration Release --no-restore --verbosity quiet; \
+    rm -rf "${workdir}"
+
+RUN --mount=type=bind,from=minimax_skills,source=minimax-pdf,target=/tmp/minimax-pdf,ro \
+    --mount=type=bind,from=minimax_skills,source=minimax-xlsx,target=/tmp/minimax-xlsx,ro \
+    set -euo pipefail; \
+    cd /tmp/minimax-pdf; \
+    bash scripts/make.sh check; \
+    python3 /tmp/minimax-xlsx/scripts/formula_check.py --help >/dev/null; \
+    python3 /tmp/minimax-xlsx/scripts/libreoffice_recalc.py --check >/dev/null
 
 RUN set -euo pipefail; \
     arch="$(dpkg --print-architecture)"; \
