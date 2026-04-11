@@ -24,9 +24,9 @@ import (
 const authCookieName = "agent-container-hub_auth"
 
 const (
-	defaultJSONBodyLimitBytes            = 1 << 20
-	environmentFileJSONBodyLimitBytes   = 2 << 20
-	buildJobEventHeartbeatInterval      = 15 * time.Second
+	defaultJSONBodyLimitBytes         = 1 << 20
+	environmentFileJSONBodyLimitBytes = 2 << 20
+	buildJobEventHeartbeatInterval    = 15 * time.Second
 )
 
 //go:embed ui/*

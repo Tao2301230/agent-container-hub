@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"agent-container-hub/internal/model"
 	"agent-container-hub/internal/runtime"
 )
 
@@ -37,6 +38,10 @@ func validateSessionID(sessionID string) error {
 		return fmt.Errorf("%w: session_id must match %s", ErrValidation, validSessionID.String())
 	}
 	return nil
+}
+
+func normalizeSessionID(sessionID string) string {
+	return strings.TrimSpace(sessionID)
 }
 
 func generateID() (string, error) {

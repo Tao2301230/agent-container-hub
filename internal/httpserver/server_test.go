@@ -1,7 +1,6 @@
 package httpserver
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -278,6 +277,13 @@ func TestAPIErrorLoggingIncludesErrorMessages(t *testing.T) {
 			t.Fatalf("logs = %s, want %s", logText, want)
 		}
 	}
+}
+
+func TestLoginEndpointRejectsOversizedJSONBody(t *testing.T) {
+	t.Parallel()
+
+	handler := newTestHandler(t, "secret")
+	assertJSONBodyTooLarge(t, handler, http.MethodPost, "/api/auth/login", `{"token":"`+strings.Repeat("x", defaultJSONBodyLimitBytes)+`"}`, "")
 }
 
 func TestAPIPanicRecoveryLogsAndReturnsJSON(t *testing.T) {
@@ -841,6 +847,48 @@ func TestExecuteEndpointReturnsJSONForCommandFailure(t *testing.T) {
 	}
 }
 
+func TestExecuteEndpointReturnsSnakeCaseJSONKeysForCommandFailure(t *testing.T) {
+	t.Parallel()
+
+	handler, _, fake := newTestHandlerWithRuntime(t, "")
+	fake.execResult = runtime.ExecResult{
+		ExitCode:   17,
+		Stderr:     "permission denied\n",
+		StartedAt:  time.Date(2026, time.March, 17, 12, 38, 34, 0, time.UTC),
+		FinishedAt: time.Date(2026, time.March, 17, 12, 38, 34, 95*int(time.Millisecond), time.UTC),
+	}
+
+	_ = doJSON[api.EnvironmentResponse](t, handler, http.MethodPost, "/api/environments", api.UpsertEnvironmentRequest{
+		Name:            "shell",
+		ImageRepository: "busybox",
+		ImageTag:        "latest",
+		Enabled:         true,
+		Build: model.BuildSpec{
+			Dockerfile: "FROM busybox:latest\n",
+		},
+	}, http.StatusOK, "")
+	_ = doJSON[api.CreateSessionResponse](t, handler, http.MethodPost, "/api/sessions/create", api.CreateSessionRequest{
+		SessionID:       "failed-http-session-json-keys",
+		EnvironmentName: "shell",
+	}, http.StatusOK, "")
+
+	payload := doJSONMap(t, handler, http.MethodPost, "/api/sessions/failed-http-session-json-keys/execute", api.ExecuteSessionRequest{
+		Command: "pwd",
+	}, http.StatusOK, "")
+	if payload["exit_code"] != float64(17) {
+		t.Fatalf("execute payload exit_code = %v, want 17", payload["exit_code"])
+	}
+	if payload["working_directory"] != runtime.DefaultMountPath {
+		t.Fatalf("execute payload working_directory = %v, want %s", payload["working_directory"], runtime.DefaultMountPath)
+	}
+	if _, ok := payload["exitCode"]; ok {
+		t.Fatalf("execute payload unexpectedly contains camelCase exitCode: %+v", payload)
+	}
+	if _, ok := payload["workingDirectory"]; ok {
+		t.Fatalf("execute payload unexpectedly contains camelCase workingDirectory: %+v", payload)
+	}
+}
+
 func TestExecuteEndpointFallsBackToStdoutForCommandFailure(t *testing.T) {
 	t.Parallel()
 
@@ -976,6 +1024,41 @@ func TestExecuteEndpointReturnsEffectiveWorkingDirectoryInJSONFailure(t *testing
 	}
 }
 
+func TestCreateSessionEndpointRejectsOversizedJSONBody(t *testing.T) {
+	t.Parallel()
+
+	handler := newTestHandler(t, "")
+	assertJSONBodyTooLarge(t, handler, http.MethodPost, "/api/sessions/create", `{"session_id":"`+strings.Repeat("x", defaultJSONBodyLimitBytes)+`"}`, "")
+}
+
+func TestExecuteEndpointRejectsOversizedJSONBody(t *testing.T) {
+	t.Parallel()
+
+	handler := newTestHandler(t, "")
+	assertJSONBodyTooLarge(t, handler, http.MethodPost, "/api/sessions/demo/execute", `{"command":"`+strings.Repeat("x", defaultJSONBodyLimitBytes)+`"}`, "")
+}
+
+func TestUpsertEnvironmentEndpointRejectsOversizedJSONBody(t *testing.T) {
+	t.Parallel()
+
+	handler := newTestHandler(t, "")
+	assertJSONBodyTooLarge(t, handler, http.MethodPost, "/api/environments", `{"name":"shell","description":"`+strings.Repeat("x", defaultJSONBodyLimitBytes)+`"}`, "")
+}
+
+func TestStartBuildJobEndpointRejectsOversizedJSONBody(t *testing.T) {
+	t.Parallel()
+
+	handler := newTestHandler(t, "")
+	assertJSONBodyTooLarge(t, handler, http.MethodPost, "/api/environments/shell/build-jobs", `{"target":"`+strings.Repeat("x", defaultJSONBodyLimitBytes)+`"}`, "")
+}
+
+func TestPutEnvironmentFileEndpointRejectsOversizedJSONBody(t *testing.T) {
+	t.Parallel()
+
+	handler := newTestHandler(t, "")
+	assertJSONBodyTooLarge(t, handler, http.MethodPut, "/api/environments/shell/files/Makefile", `{"content":"`+strings.Repeat("x", environmentFileJSONBodyLimitBytes)+`"}`, "")
+}
+
 func TestCreateSessionEndpointAcceptsMounts(t *testing.T) {
 	t.Parallel()
 
@@ -1092,8 +1175,6 @@ func TestBuildJobEndpointsExposeActiveBuildAndSSE(t *testing.T) {
 	t.Parallel()
 
 	handler, _, fake := newTestHandlerWithRuntime(t, "")
-	server := httptest.NewServer(handler)
-	defer server.Close()
 	_ = doJSON[api.EnvironmentResponse](t, handler, http.MethodPost, "/api/environments", api.UpsertEnvironmentRequest{
 		Name:            "shell",
 		ImageRepository: "busybox",
@@ -1124,49 +1205,32 @@ func TestBuildJobEndpointsExposeActiveBuildAndSSE(t *testing.T) {
 		t.Fatalf("activeEnvironment.LastBuild = %+v, want building", activeEnvironment.LastBuild)
 	}
 
-	streamReady := make(chan struct{}, 1)
-	eventsDone := make(chan string, 1)
+	streamCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	streamReq := httptest.NewRequest(http.MethodGet, "/api/build-jobs/"+started.ID+"/events", nil).WithContext(streamCtx)
+	streamRecorder := httptest.NewRecorder()
+	eventsDone := make(chan struct{}, 1)
 	go func() {
-		resp, err := http.Get(server.URL + "/api/build-jobs/" + started.ID + "/events")
-		if err != nil {
-			eventsDone <- err.Error()
-			return
-		}
-		defer resp.Body.Close()
-		reader := bufio.NewReader(resp.Body)
-		var body bytes.Buffer
-		for {
-			line, readErr := reader.ReadString('\n')
-			if line != "" {
-				body.WriteString(line)
-				if strings.Contains(body.String(), "event: snapshot") {
-					select {
-					case streamReady <- struct{}{}:
-					default:
-					}
-				}
-			}
-			if readErr != nil {
-				if readErr != io.EOF {
-					eventsDone <- readErr.Error()
-					return
-				}
-				break
-			}
-		}
-		eventsDone <- body.String()
+		handler.ServeHTTP(streamRecorder, streamReq)
+		eventsDone <- struct{}{}
 	}()
 
-	select {
-	case <-streamReady:
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for snapshot event")
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if strings.Contains(streamRecorder.Body.String(), "event: snapshot") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for snapshot event, body = %q", streamRecorder.Body.String())
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 
 	close(fake.buildContinue)
 
 	select {
-	case body := <-eventsDone:
+	case <-eventsDone:
+		body := streamRecorder.Body.String()
 		for _, want := range []string{
 			"event: snapshot",
 			"event: log",
@@ -1392,8 +1456,8 @@ func TestBuiltinShellEnvironmentUsesRecommendedCNMirror(t *testing.T) {
 	}
 
 	makefile := doJSON[api.EnvironmentFileResponse](t, handler, http.MethodGet, "/api/environments/shell/files/Makefile", nil, http.StatusOK, "")
-	if !strings.Contains(makefile.Content, "CN_BASE_IMAGE ?= m.daocloud.io/docker.io/library/busybox:latest") {
-		t.Fatalf("shell Makefile = %q, want recommended DaoCloud CN_BASE_IMAGE", makefile.Content)
+	if !strings.Contains(makefile.Content, "CN_BASE_IMAGE ?= docker.1ms.run/library/busybox:1.37.0") {
+		t.Fatalf("shell Makefile = %q, want current recommended CN_BASE_IMAGE", makefile.Content)
 	}
 }
 
@@ -1565,6 +1629,57 @@ func doJSONResponse[T any](t *testing.T, handler http.Handler, method, path stri
 	return result, recorder.Header().Get("Content-Type")
 }
 
+func doJSONMap(t *testing.T, handler http.Handler, method, path string, payload any, wantStatus int, bearer string) map[string]any {
+	t.Helper()
+
+	var body bytes.Buffer
+	if payload != nil {
+		if err := json.NewEncoder(&body).Encode(payload); err != nil {
+			t.Fatalf("json.Encode() error = %v", err)
+		}
+	}
+	req := httptest.NewRequest(method, path, &body)
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+	if recorder.Code != wantStatus {
+		t.Fatalf("%s %s status = %d, want %d, body = %s", method, path, recorder.Code, wantStatus, recorder.Body.String())
+	}
+	var result map[string]any
+	if err := json.NewDecoder(recorder.Body).Decode(&result); err != nil {
+		t.Fatalf("json.Decode() error = %v", err)
+	}
+	return result
+}
+
+func assertJSONBodyTooLarge(t *testing.T, handler http.Handler, method, path, body, bearer string) {
+	t.Helper()
+
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("%s %s status = %d, want 413, body = %s", method, path, recorder.Code, recorder.Body.String())
+	}
+
+	var payload map[string]string
+	if err := json.NewDecoder(recorder.Body).Decode(&payload); err != nil {
+		t.Fatalf("json.Decode() error = %v", err)
+	}
+	if payload["error"] != "request body too large" {
+		t.Fatalf("%s %s payload = %+v, want request body too large", method, path, payload)
+	}
+}
+
 func newTestHandler(t *testing.T, authToken string) http.Handler {
 	t.Helper()
 
@@ -1679,7 +1794,7 @@ func newHandlerForConfigWithRuntimeAndOptions(t *testing.T, cfg config.Config, o
 	}
 	serviceLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	sessionService := sandbox.NewSessionService(cfg, st, envs, fake, serviceLogger)
-	buildService := sandbox.NewBuildService(cfg, st, envs, fake, serviceLogger)
+	buildService := sandbox.NewBuildService(context.Background(), cfg, st, envs, fake, serviceLogger)
 	environmentService := sandbox.NewEnvironmentService(cfg.ConfigRoot, envs, buildService, fake, serviceLogger)
 	if options.Logger == nil {
 		options.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -1749,7 +1864,7 @@ func (f *httpFakeRuntime) Exec(_ context.Context, containerID string, _ runtime.
 	return f.execResult, nil
 }
 
-func (f *httpFakeRuntime) Build(_ context.Context, opts runtime.BuildOptions) (runtime.BuildResult, error) {
+func (f *httpFakeRuntime) Build(ctx context.Context, opts runtime.BuildOptions) (runtime.BuildResult, error) {
 	if f.buildStarted != nil {
 		select {
 		case f.buildStarted <- struct{}{}:
@@ -1757,7 +1872,11 @@ func (f *httpFakeRuntime) Build(_ context.Context, opts runtime.BuildOptions) (r
 		}
 	}
 	if f.buildContinue != nil {
-		<-f.buildContinue
+		select {
+		case <-ctx.Done():
+			return runtime.BuildResult{}, ctx.Err()
+		case <-f.buildContinue:
+		}
 	}
 	if opts.OutputSink != nil && f.buildResult.Output != "" {
 		_, _ = io.WriteString(opts.OutputSink, f.buildResult.Output)

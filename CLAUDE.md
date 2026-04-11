@@ -79,7 +79,9 @@
 - `GET /api/environments/{name}/files`
 - `GET /api/environments/{name}/files/{path...}`
 - `PUT /api/environments/{name}/files/{path...}`
-- `POST /api/environments/{name}/build`
+- `POST /api/environments/{name}/build-jobs`
+- `GET /api/build-jobs/{id}`
+- `GET /api/build-jobs/{id}/events`
 - `GET /`
 - `GET /app`
 - `GET /sessions`

@@ -329,11 +329,14 @@ func (s *BuildService) prepareBuild(ctx context.Context, name string) (*model.En
 }
 
 func (s *BuildService) runDirectBuildJob(ctx context.Context, active *activeBuildJob, environment *model.Environment, buildDir string, dockerfilePath string, buildContexts map[string]string) {
-	defer s.warnIfCleanupFails("remove build dir after direct build", buildDir, os.RemoveAll(buildDir))
+	defer func() {
+		s.warnIfCleanupFails("remove build dir after direct build", buildDir, os.RemoveAll(buildDir))
+	}()
 
 	result, err := s.runtime.Build(ctx, runtime.BuildOptions{
 		ContextDir:     buildDir,
 		DockerfilePath: dockerfilePath,
+		DockerfileBody: environment.Build.Dockerfile,
 		Image:          environment.ImageRef(),
 		BuildArgs:      model.CloneMap(environment.Build.BuildArgs),
 		BuildContexts:  model.CloneMap(buildContexts),
@@ -501,7 +504,9 @@ func (s *BuildService) runSmokeCheck(ctx context.Context, environment *model.Env
 	if err := os.MkdirAll(workspace, 0o755); err != nil {
 		return err
 	}
-	defer s.warnIfCleanupFails("remove smoke workspace after build", workspace, os.RemoveAll(workspace))
+	defer func() {
+		s.warnIfCleanupFails("remove smoke workspace after build", workspace, os.RemoveAll(workspace))
+	}()
 
 	info, err := s.runtime.Create(ctx, runtime.CreateOptions{
 		Name:  "smoke-" + name,
@@ -520,7 +525,9 @@ func (s *BuildService) runSmokeCheck(ctx context.Context, environment *model.Env
 	if err != nil {
 		return err
 	}
-	defer s.warnIfCleanupFails("remove smoke container after build", info.ID, s.runtime.Remove(context.Background(), info.ID))
+	defer func() {
+		s.warnIfCleanupFails("remove smoke container after build", info.ID, s.runtime.Remove(context.Background(), info.ID))
+	}()
 
 	if _, err := s.runtime.Start(ctx, info.ID); err != nil {
 		return err
@@ -794,8 +801,7 @@ func (s *BuildService) sendBuildEvent(ch chan BuildEvent, event BuildEvent) {
 }
 
 func (s *BuildService) newBuildJobContext() context.Context {
-	ctx, _ := context.WithCancel(s.lifecycleCtx)
-	return ctx
+	return s.lifecycleCtx
 }
 
 func (s *BuildService) warnIfCleanupFails(action, target string, err error) {

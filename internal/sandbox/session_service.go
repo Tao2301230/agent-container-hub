@@ -83,7 +83,7 @@ func (s *SessionService) Create(ctx context.Context, req model.CreateSessionRequ
 		return nil, fmt.Errorf("%w: %s", ErrValidation, err)
 	}
 
-	req.SessionID = strings.TrimSpace(req.SessionID)
+	req.SessionID = normalizeSessionID(req.SessionID)
 	if req.SessionID == "" {
 		token, err := generateID()
 		if err != nil {
@@ -152,7 +152,9 @@ func (s *SessionService) Create(ctx context.Context, req model.CreateSessionRequ
 		Labels:    containerLabels,
 	})
 	if err != nil {
-		s.warnIfCleanupFails("remove rootfs after session create failed", rootfsPath, os.RemoveAll(rootfsPath))
+		if rootfsPath != "" {
+			s.warnIfCleanupFails("remove rootfs after session create failed", rootfsPath, os.RemoveAll(rootfsPath))
+		}
 		if errors.Is(err, runtime.ErrContainerExists) {
 			return nil, fmt.Errorf("%w: session already exists", ErrConflict)
 		}
@@ -175,7 +177,9 @@ func (s *SessionService) Create(ctx context.Context, req model.CreateSessionRequ
 			"error", err,
 		)
 		s.warnIfCleanupFails("remove container after session start failed", info.ID, s.runtime.Remove(ctx, info.ID))
-		s.warnIfCleanupFails("remove rootfs after session start failed", rootfsPath, os.RemoveAll(rootfsPath))
+		if rootfsPath != "" {
+			s.warnIfCleanupFails("remove rootfs after session start failed", rootfsPath, os.RemoveAll(rootfsPath))
+		}
 		return nil, err
 	}
 
@@ -240,7 +244,7 @@ func (s *SessionService) CreateTemplate(context.Context) (*model.SessionCreateTe
 }
 
 func (s *SessionService) Execute(ctx context.Context, sessionID string, req model.ExecuteSessionRequest) (*model.ExecuteSessionResult, error) {
-	sessionID = strings.TrimSpace(sessionID)
+	sessionID = normalizeSessionID(sessionID)
 	if sessionID == "" {
 		return nil, fmt.Errorf("%w: session_id is required", ErrValidation)
 	}
@@ -315,7 +319,7 @@ func (s *SessionService) execOnSession(ctx context.Context, session *model.Sessi
 
 func (s *SessionService) Stop(ctx context.Context, sessionID string) (*model.StopSessionResult, error) {
 	startedAt := time.Now().UTC()
-	sessionID = strings.TrimSpace(sessionID)
+	sessionID = normalizeSessionID(sessionID)
 	if sessionID == "" {
 		return nil, fmt.Errorf("%w: session_id is required", ErrValidation)
 	}
@@ -405,7 +409,7 @@ func (s *SessionService) Query(ctx context.Context, query store.SessionQuery) (*
 }
 
 func (s *SessionService) Get(ctx context.Context, sessionID string) (*model.SessionView, error) {
-	session, err := s.store.GetSession(ctx, strings.TrimSpace(sessionID))
+	session, err := s.store.GetSession(ctx, normalizeSessionID(sessionID))
 	if err != nil {
 		return nil, err
 	}
@@ -413,7 +417,7 @@ func (s *SessionService) Get(ctx context.Context, sessionID string) (*model.Sess
 }
 
 func (s *SessionService) ListExecutions(ctx context.Context, sessionID string, pagination store.Pagination) (*model.SessionExecutionList, error) {
-	sessionID = strings.TrimSpace(sessionID)
+	sessionID = normalizeSessionID(sessionID)
 	if sessionID == "" {
 		return nil, fmt.Errorf("%w: session_id is required", ErrValidation)
 	}

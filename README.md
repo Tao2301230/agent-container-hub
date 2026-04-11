@@ -265,6 +265,7 @@ EXEC_LOG_MAX_OUTPUT_BYTES=65536
 ### 会话接口
 
 - `POST /api/sessions/create`
+- `GET /api/session-create/template`
 - `POST /api/sessions/{id}/execute`
 - `POST /api/sessions/{id}/stop`
 - `GET /api/sessions`
@@ -342,9 +343,9 @@ hello
 
 ```json
 {
-  "exitCode": 17,
+  "exit_code": 17,
   "mode": "sandbox",
-  "workingDirectory": "/workspace",
+  "working_directory": "/workspace",
   "stdout": "",
   "stderr": "permission denied\n"
 }
@@ -396,7 +397,12 @@ curl -X POST http://127.0.0.1:11960/api/sessions/demo-shell/stop
 - `GET /api/environments`
 - `GET /api/environments/{name}`
 - `GET /api/environments/{name}/agent-prompt`
-- `POST /api/environments/{name}/build`
+- `GET /api/environments/{name}/files`
+- `GET /api/environments/{name}/files/{path...}`
+- `PUT /api/environments/{name}/files/{path...}`
+- `POST /api/environments/{name}/build-jobs`
+- `GET /api/build-jobs/{id}`
+- `GET /api/build-jobs/{id}/events`
 
 注册 environment 示例：
 
@@ -419,7 +425,7 @@ curl -X POST http://127.0.0.1:11960/api/environments \
 触发 build 示例：
 
 ```bash
-curl -X POST http://127.0.0.1:11960/api/environments/shell/build
+curl -X POST http://127.0.0.1:11960/api/environments/shell/build-jobs
 ```
 
 如果需要直接在环境目录里本地构建镜像，也可以使用各自的 `Makefile`：

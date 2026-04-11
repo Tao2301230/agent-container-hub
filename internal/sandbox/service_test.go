@@ -2135,8 +2135,8 @@ func TestBuildEnvironmentRejectsConcurrentBuildsForSameEnvironment(t *testing.T)
 		t.Fatalf("Upsert() error = %v", err)
 	}
 
-	fake.buildStarted = make(chan struct{}, 1)
 	fake.buildContinue = make(chan struct{})
+	fake.buildStarted = make(chan struct{}, 1)
 
 	firstResult := make(chan error, 1)
 	go func() {
@@ -2163,6 +2163,60 @@ func TestBuildEnvironmentRejectsConcurrentBuildsForSameEnvironment(t *testing.T)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for first build to finish")
+	}
+}
+
+func TestStartBuildJobFailsWhenServiceContextStops(t *testing.T) {
+	t.Parallel()
+
+	services, cleanup, fake := newTestServices(t)
+	defer cleanup()
+
+	if _, err := services.environments.Upsert(context.Background(), api.UpsertEnvironmentRequest{
+		Name:            "python",
+		ImageRepository: "python",
+		ImageTag:        "3.11",
+		Enabled:         true,
+		Build: model.BuildSpec{
+			Dockerfile: "FROM python:3.11\n",
+		},
+	}); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	fake.buildStarted = make(chan struct{}, 1)
+	fake.buildContinue = make(chan struct{})
+
+	started, err := services.builds.StartBuildJob(context.Background(), "python", api.BuildEnvironmentRequest{})
+	if err != nil {
+		t.Fatalf("StartBuildJob() error = %v", err)
+	}
+
+	services.stopBuilds()
+
+	deadline := time.After(2 * time.Second)
+	for {
+		persisted, getErr := services.builds.GetBuildJob(context.Background(), started.ID)
+		if getErr == nil {
+			if persisted.Status != string(model.BuildJobStatusFailed) {
+				select {
+				case <-deadline:
+					t.Fatalf("persisted.Status = %q, want failed", persisted.Status)
+				case <-time.After(20 * time.Millisecond):
+					continue
+				}
+			}
+			if !strings.Contains(persisted.Error, context.Canceled.Error()) {
+				t.Fatalf("persisted.Error = %q, want context canceled", persisted.Error)
+			}
+			return
+		}
+
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for canceled build to persist: %v", getErr)
+		case <-time.After(20 * time.Millisecond):
+		}
 	}
 }
 
@@ -2496,6 +2550,26 @@ func TestSubscribeBuildJobStreamsLogsAndCompletion(t *testing.T) {
 	}
 }
 
+func TestSendBuildEventDoesNotBlockForeverForSlowSubscribers(t *testing.T) {
+	t.Parallel()
+
+	service := &BuildService{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	subscriber := make(chan BuildEvent, buildSubscriberBufferSize)
+	for i := 0; i < cap(subscriber); i++ {
+		subscriber <- BuildEvent{Type: BuildEventLog, Chunk: "busy"}
+	}
+
+	startedAt := time.Now()
+	service.sendBuildEvent(subscriber, BuildEvent{
+		Type: BuildEventComplete,
+		Job:  &model.BuildJob{ID: "build-slow-subscriber"},
+	})
+
+	if elapsed := time.Since(startedAt); elapsed > buildEventSendTimeout+(200*time.Millisecond) {
+		t.Fatalf("sendBuildEvent() took %s, want bounded wait", elapsed)
+	}
+}
+
 func TestReconcileExistingImagesCreatesSucceededBuildForHostImage(t *testing.T) {
 	t.Parallel()
 
@@ -2662,6 +2736,7 @@ type testServices struct {
 	sessions     *testSessionService
 	environments *testEnvironmentService
 	builds       *testBuildService
+	stopBuilds   context.CancelFunc
 }
 
 type testSessionService struct {
@@ -2732,16 +2807,21 @@ func newTestServicesWithLogger(t *testing.T, configure func(*config.Config), log
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	builds := NewBuildService(cfg, st, envs, fake, logger)
+	buildCtx, cancelBuilds := context.WithCancel(context.Background())
+	builds := NewBuildService(buildCtx, cfg, st, envs, fake, logger)
 	sessionService := NewSessionService(cfg, st, envs, fake, logger)
 	environmentService := NewEnvironmentService(cfg.ConfigRoot, envs, builds, fake, logger)
 	return &testServices{
-		store:        st,
-		envs:         envs,
-		sessions:     &testSessionService{svc: sessionService, cfg: cfg, locks: sessionService.locks},
-		environments: &testEnvironmentService{svc: environmentService},
-		builds:       &testBuildService{svc: builds},
-	}, func() { _ = st.Close() }, fake
+			store:        st,
+			envs:         envs,
+			sessions:     &testSessionService{svc: sessionService, cfg: cfg, locks: sessionService.locks},
+			environments: &testEnvironmentService{svc: environmentService},
+			builds:       &testBuildService{svc: builds},
+			stopBuilds:   cancelBuilds,
+		}, func() {
+			cancelBuilds()
+			_ = st.Close()
+		}, fake
 }
 
 func (s *testSessionService) Create(ctx context.Context, req api.CreateSessionRequest) (*api.CreateSessionResponse, error) {
@@ -3173,9 +3253,14 @@ func (f *fakeRuntime) Start(_ context.Context, containerID string) (runtime.Cont
 	return info, nil
 }
 
-func (f *fakeRuntime) Exec(_ context.Context, containerID string, opts runtime.ExecOptions) (runtime.ExecResult, error) {
+func (f *fakeRuntime) Exec(ctx context.Context, containerID string, opts runtime.ExecOptions) (runtime.ExecResult, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	select {
+	case <-ctx.Done():
+		return runtime.ExecResult{}, ctx.Err()
+	default:
+	}
 	f.lastExec = opts
 	if f.execErr != nil {
 		return runtime.ExecResult{}, f.execErr
@@ -3195,32 +3280,14 @@ func (f *fakeRuntime) Exec(_ context.Context, containerID string, opts runtime.E
 	return f.execResult, nil
 }
 
-func (f *fakeRuntime) Build(_ context.Context, opts runtime.BuildOptions) (runtime.BuildResult, error) {
+func (f *fakeRuntime) Build(ctx context.Context, opts runtime.BuildOptions) (runtime.BuildResult, error) {
 	f.mu.Lock()
 	f.lastBuild = opts
 	f.buildFiles = make(map[string]string)
-	err := filepath.Walk(opts.ContextDir, func(path string, info os.FileInfo, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if info.IsDir() {
-			return nil
-		}
-		rel, relErr := filepath.Rel(opts.ContextDir, path)
-		if relErr != nil {
-			return relErr
-		}
-		payload, readErr := os.ReadFile(path)
-		if readErr != nil {
-			return readErr
-		}
-		f.buildFiles[rel] = string(payload)
-		return nil
-	})
-	f.mu.Unlock()
-	if err != nil {
-		return runtime.BuildResult{}, err
+	if strings.TrimSpace(opts.DockerfileBody) != "" {
+		f.buildFiles["Dockerfile"] = opts.DockerfileBody
 	}
+	f.mu.Unlock()
 	if f.buildStarted != nil {
 		select {
 		case f.buildStarted <- struct{}{}:
@@ -3228,7 +3295,11 @@ func (f *fakeRuntime) Build(_ context.Context, opts runtime.BuildOptions) (runti
 		}
 	}
 	if f.buildContinue != nil {
-		<-f.buildContinue
+		select {
+		case <-ctx.Done():
+			return runtime.BuildResult{}, ctx.Err()
+		case <-f.buildContinue:
+		}
 	}
 	if opts.OutputSink != nil && f.buildResult.Output != "" {
 		_, _ = io.WriteString(opts.OutputSink, f.buildResult.Output)

@@ -87,6 +87,7 @@ type ExecResult struct {
 type BuildOptions struct {
 	ContextDir     string
 	DockerfilePath string
+	DockerfileBody string
 	Image          string
 	BuildArgs      map[string]string
 	BuildContexts  map[string]string
