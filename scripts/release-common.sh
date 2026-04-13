@@ -73,7 +73,7 @@ archive_format_for_os() {
   validate_target_os "$target_os"
   case "$target_os" in
     windows) printf 'zip\n' ;;
-    *) printf 'tar.gz\n' ;;
+    linux|darwin) printf 'tar.gz\n' ;;
   esac
 }
 
@@ -212,12 +212,50 @@ write_program_manifest() {
   local start_script="start.sh"
   local stop_script="stop.sh"
   local deploy_script="deploy.sh"
+  local program_common_script="scripts/program-common.sh"
+  local error_log_json=""
+  local required_paths=()
+  local required_paths_json
+  local index
 
   if [[ "$target_os" == "windows" ]]; then
     start_script="start.ps1"
     stop_script="stop.ps1"
     deploy_script="deploy.ps1"
+    program_common_script="scripts/program-common.ps1"
+    error_log_json='    "errorLogRelativePath": "run/agent-container-hub.stderr.log",'
+    required_paths=(
+      "backend/agent-container-hub.exe"
+      "$start_script"
+      "$stop_script"
+      "$deploy_script"
+      "$program_common_script"
+      ".env.example"
+      "manifest.json"
+      "configs/environments"
+    )
+  else
+    required_paths=(
+      "backend/agent-container-hub"
+      "$start_script"
+      "$stop_script"
+      "$deploy_script"
+      "$program_common_script"
+      ".env.example"
+      "manifest.json"
+      "configs/environments"
+    )
   fi
+
+  required_paths_json=""
+  for index in "${!required_paths[@]}"; do
+    required_paths_json+="      \"${required_paths[$index]}\""
+    if (( index < ${#required_paths[@]} - 1 )); then
+      required_paths_json+=","
+    fi
+    required_paths_json+=$'\n'
+  done
+  required_paths_json="${required_paths_json%$'\n'}"
 
   cat >"$dest" <<EOF
 {
@@ -260,15 +298,9 @@ write_program_manifest() {
   "runtime": {
     "pidRelativePath": "run/agent-container-hub.pid",
     "logRelativePath": "run/agent-container-hub.log",
+${error_log_json}
     "requiredPaths": [
-      "backend/agent-container-hub",
-      "start.sh",
-      "stop.sh",
-      "deploy.sh",
-      "scripts/program-common.sh",
-      ".env.example",
-      "manifest.json",
-      "configs/environments"
+${required_paths_json}
     ]
   },
   "web": {
