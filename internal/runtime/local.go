@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -229,31 +230,105 @@ func resolveLocalWorkingDir(container localContainer, execCwd string) (string, e
 		target = container.cwd
 	}
 	if target == "" {
-		target = DefaultMountPath
+		return defaultLocalWorkingDir()
 	}
+	if hostDir, ok, err := resolveExistingLocalDir(target); ok || err != nil {
+		return hostDir, err
+	}
+	if hostDir, ok, err := resolveMountedLocalDir(container.mounts, target); ok || err != nil {
+		return hostDir, err
+	}
+	return "", fmt.Errorf("local runtime working directory %q does not exist or is not a directory", target)
+}
 
-	baseSource := ""
-	baseDest := ""
-	for _, mount := range container.mounts {
-		if mount.Destination == DefaultMountPath {
-			baseSource = mount.Source
-			baseDest = mount.Destination
-			break
+func defaultLocalWorkingDir() (string, error) {
+	workingDir, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	return ensureLocalDir(workingDir, workingDir)
+}
+
+func resolveExistingLocalDir(target string) (string, bool, error) {
+	clean := filepath.Clean(strings.TrimSpace(target))
+	if clean == "" {
+		return "", false, nil
+	}
+	if !filepath.IsAbs(clean) {
+		absolute, err := filepath.Abs(clean)
+		if err != nil {
+			return "", false, err
+		}
+		clean = absolute
+	}
+	dir, err := ensureLocalDir(clean, target)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return dir, true, nil
+}
+
+func resolveMountedLocalDir(mounts []model.Mount, target string) (string, bool, error) {
+	target = normalizeMountTarget(target)
+	if target == "" {
+		return "", false, nil
+	}
+	bestIndex := -1
+	bestLength := -1
+	for index, mount := range mounts {
+		destination := normalizeMountTarget(mount.Destination)
+		if destination == "" {
+			continue
+		}
+		if target != destination && !strings.HasPrefix(target, destination+"/") {
+			continue
+		}
+		if len(destination) > bestLength {
+			bestIndex = index
+			bestLength = len(destination)
 		}
 	}
-	if baseSource == "" {
-		return "", fmt.Errorf("local runtime requires a %s mount", DefaultMountPath)
+	if bestIndex < 0 {
+		return "", false, nil
 	}
+	selected := mounts[bestIndex]
+	destination := normalizeMountTarget(selected.Destination)
+	relative := strings.TrimPrefix(target, destination)
+	relative = strings.TrimPrefix(relative, "/")
+	hostPath := selected.Source
+	if relative != "" {
+		hostPath = filepath.Join(hostPath, filepath.FromSlash(relative))
+	}
+	dir, err := ensureLocalDir(hostPath, target)
+	if err != nil {
+		return "", false, err
+	}
+	return dir, true, nil
+}
 
-	if target == baseDest {
-		return baseSource, nil
+func ensureLocalDir(path string, original string) (string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", fs.ErrNotExist
+		}
+		return "", fmt.Errorf("inspect local working directory %q: %w", original, err)
 	}
-	prefix := baseDest + "/"
-	if strings.HasPrefix(target, prefix) {
-		rel := strings.TrimPrefix(target, prefix)
-		return filepath.Join(baseSource, filepath.FromSlash(rel)), nil
+	if !info.IsDir() {
+		return "", fmt.Errorf("local runtime working directory %q is not a directory", original)
 	}
-	return "", fmt.Errorf("local runtime cannot resolve working directory %q outside %s", target, baseDest)
+	return filepath.Clean(path), nil
+}
+
+func normalizeMountTarget(path string) string {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return ""
+	}
+	return filepath.ToSlash(filepath.Clean(trimmed))
 }
 
 func mergeEnviron(base []string, overrides map[string]string) []string {

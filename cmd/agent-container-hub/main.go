@@ -73,6 +73,7 @@ func main() {
 		Handler: httpserver.New(sessionService, environmentService, buildService, cfg.AuthToken, httpserver.Options{
 			Logger:           logger,
 			AccessLogEnabled: cfg.HTTPAccessLogEnabled,
+			EngineName:       provider.Name(),
 			ErrorLogEnabled:  cfg.HTTPErrorLogEnabled,
 		}),
 		ReadHeaderTimeout: httpReadHeaderTimeout,

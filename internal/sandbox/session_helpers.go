@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -31,6 +32,20 @@ func sessionDefaultCwd(requestCwd, environmentCwd string) string {
 		return environmentCwd
 	}
 	return runtime.DefaultMountPath
+}
+
+func localSessionDefaultCwd(requestCwd, environmentCwd string) string {
+	if strings.TrimSpace(requestCwd) != "" {
+		return strings.TrimSpace(requestCwd)
+	}
+	if strings.TrimSpace(environmentCwd) != "" {
+		return strings.TrimSpace(environmentCwd)
+	}
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		return "."
+	}
+	return workingDirectory
 }
 
 func validateSessionID(sessionID string) error {

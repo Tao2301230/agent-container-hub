@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -117,5 +118,69 @@ func TestLocalProviderExecTimesOut(t *testing.T) {
 	}
 	if result.ExitCode != 124 {
 		t.Fatalf("Exec().ExitCode = %d, want 124", result.ExitCode)
+	}
+}
+
+func TestLocalProviderExecUsesHostWorkingDirectoryWithoutMounts(t *testing.T) {
+	t.Parallel()
+
+	provider := NewLocalProvider()
+	root := t.TempDir()
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("EvalSymlinks() error = %v", err)
+	}
+
+	if _, err := provider.Create(context.Background(), CreateOptions{
+		Name: "host-cwd-demo",
+		Cwd:  realRoot,
+		Env:  map[string]string{"LOCAL_TEST_VALUE": "host"},
+	}); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if _, err := provider.Start(context.Background(), "host-cwd-demo"); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	result, err := provider.Exec(context.Background(), "host-cwd-demo", ExecOptions{
+		Command: "/bin/sh",
+		Args:    []string{"-lc", "printf '%s:%s' \"$PWD\" \"$LOCAL_TEST_VALUE\""},
+		Cwd:     realRoot,
+		Timeout: time.Second,
+	})
+	if err != nil {
+		t.Fatalf("Exec() error = %v", err)
+	}
+	if result.Stdout != realRoot+":host" {
+		t.Fatalf("Exec() stdout = %q, want %q", result.Stdout, realRoot+":host")
+	}
+}
+
+func TestLocalProviderExecRejectsMissingWorkingDirectory(t *testing.T) {
+	t.Parallel()
+
+	provider := NewLocalProvider()
+	root := t.TempDir()
+
+	if _, err := provider.Create(context.Background(), CreateOptions{
+		Name: "missing-cwd-demo",
+		Cwd:  root,
+	}); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if _, err := provider.Start(context.Background(), "missing-cwd-demo"); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	_, err := provider.Exec(context.Background(), "missing-cwd-demo", ExecOptions{
+		Command: "/bin/sh",
+		Args:    []string{"-lc", "pwd"},
+		Cwd:     filepath.Join(root, "does-not-exist"),
+	})
+	if err == nil {
+		t.Fatal("Exec() error = nil, want missing directory error")
+	}
+	if !strings.Contains(err.Error(), "does not exist or is not a directory") {
+		t.Fatalf("Exec() error = %q, want missing directory detail", err.Error())
 	}
 }

@@ -470,7 +470,7 @@ func TestCreateSessionUsesLocalPlaceholderImage(t *testing.T) {
 	}
 }
 
-func TestCreateSessionRejectsNonWorkspaceMountsInLocalMode(t *testing.T) {
+func TestCreateSessionAllowsNonWorkspaceMountsInLocalMode(t *testing.T) {
 	t.Parallel()
 
 	services, cleanup, fake := newTestServices(t)
@@ -490,12 +490,64 @@ func TestCreateSessionRejectsNonWorkspaceMountsInLocalMode(t *testing.T) {
 		t.Fatalf("Upsert() error = %v", err)
 	}
 
-	_, err := services.sessions.Create(context.Background(), api.CreateSessionRequest{
+	created, err := services.sessions.Create(context.Background(), api.CreateSessionRequest{
 		SessionID:       "local-mounts",
 		EnvironmentName: "shell",
 	})
-	if !errors.Is(err, ErrValidation) {
-		t.Fatalf("Create() error = %v, want ErrValidation", err)
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if created.RootfsPath != "" {
+		t.Fatalf("Create().RootfsPath = %q, want empty", created.RootfsPath)
+	}
+	if len(created.Mounts) != 1 || created.Mounts[0].Destination != "/skills" {
+		t.Fatalf("Create().Mounts = %+v, want only /skills", created.Mounts)
+	}
+	if len(fake.lastCreate.Mounts) != 1 || fake.lastCreate.Mounts[0].Destination != "/skills" {
+		t.Fatalf("runtime create mounts = %+v, want only /skills", fake.lastCreate.Mounts)
+	}
+}
+
+func TestStopLocalSessionSucceedsWhenRuntimeContextIsMissing(t *testing.T) {
+	t.Parallel()
+
+	services, cleanup, fake := newTestServices(t)
+	defer cleanup()
+	fake.name = runtime.LocalProviderName
+
+	if _, err := services.environments.Upsert(context.Background(), api.UpsertEnvironmentRequest{
+		Name:       "shell",
+		Enabled:    true,
+		DefaultCwd: runtime.DefaultMountPath,
+	}); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	created, err := services.sessions.Create(context.Background(), api.CreateSessionRequest{
+		SessionID:       "local-stop-missing",
+		EnvironmentName: "shell",
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	fake.mu.Lock()
+	delete(fake.containers, created.ContainerID)
+	fake.mu.Unlock()
+
+	stopped, err := services.sessions.Stop(context.Background(), created.SessionID)
+	if err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+	if stopped.Status != string(model.SessionStatusStopped) {
+		t.Fatalf("Stop().Status = %q, want %q", stopped.Status, model.SessionStatusStopped)
+	}
+	stored, err := services.sessions.Get(context.Background(), created.SessionID)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if stored.Status != string(model.SessionStatusStopped) {
+		t.Fatalf("stored.Status = %q, want %q", stored.Status, model.SessionStatusStopped)
 	}
 }
 

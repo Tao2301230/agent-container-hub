@@ -63,6 +63,7 @@ type Server struct {
 	sessions     SessionService
 	environments EnvironmentService
 	builds       BuildService
+	engineName   string
 	authToken    string
 	uiFS         fs.FS
 	logger       *slog.Logger
@@ -73,6 +74,7 @@ type Server struct {
 type Options struct {
 	Logger           *slog.Logger
 	AccessLogEnabled bool
+	EngineName       string
 	ErrorLogEnabled  bool
 }
 
@@ -89,6 +91,7 @@ func New(sessions SessionService, environments EnvironmentService, builds BuildS
 		sessions:     sessions,
 		environments: environments,
 		builds:       builds,
+		engineName:   strings.TrimSpace(options.EngineName),
 		authToken:    strings.TrimSpace(authToken),
 		uiFS:         uiFS,
 		logger:       logger,
@@ -118,6 +121,7 @@ func New(sessions SessionService, environments EnvironmentService, builds BuildS
 	apiMux.Handle("POST /api/sessions/{id}/stop", server.requireAuth(http.HandlerFunc(server.handleStopSession)))
 	apiMux.Handle("GET /api/environments", server.requireAuth(http.HandlerFunc(server.handleListEnvironments)))
 	apiMux.Handle("POST /api/environments", server.requireAuth(http.HandlerFunc(server.handleUpsertEnvironment)))
+	apiMux.Handle("GET /api/runtime-info", server.requireAuth(http.HandlerFunc(server.handleRuntimeInfo)))
 	apiMux.Handle("GET /api/environments/{name}", server.requireAuth(http.HandlerFunc(server.handleGetEnvironment)))
 	apiMux.Handle("GET /api/environments/{name}/agent-prompt", server.requireAuth(http.HandlerFunc(server.handleGetEnvironmentAgentPrompt)))
 	apiMux.Handle("PUT /api/environments/{name}", server.requireAuth(http.HandlerFunc(server.handleUpsertEnvironment)))
@@ -431,6 +435,12 @@ func (s *Server) handleGetEnvironment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, environmentViewToAPI(response))
+}
+
+func (s *Server) handleRuntimeInfo(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{
+		"engine": s.engineName,
+	})
 }
 
 func (s *Server) handleGetEnvironmentAgentPrompt(w http.ResponseWriter, r *http.Request) {
