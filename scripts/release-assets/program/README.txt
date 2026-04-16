@@ -17,7 +17,7 @@ Deployment steps:
 2. Change into the extracted agent-container-hub directory.
 3. Copy .env.example to .env and adjust paths, bind address, auth token, and ENGINE if needed.
 4. Run ./deploy.sh on macOS/Linux or ./deploy.ps1 on Windows to validate the bundle and create runtime directories.
-5. Start with ./start.sh or ./start.sh --daemon on macOS/Linux, or ./start.ps1 / ./start.ps1 -Daemon on Windows.
+5. Start with ./start.sh or ./start.sh --daemon on macOS/Linux, or ./start.ps1, ./start.ps1 --daemon, or ./start.ps1 -Daemon on Windows.
 6. Use ./stop.sh or ./stop.ps1 only for daemon-mode processes managed by the bundle scripts.
 
 Layout notes:
