@@ -1,6 +1,5 @@
 IMAGE_NAME ?= daily-office-pro
 TAG ?= latest
-DOCKER_BUILDKIT ?= 1
 PYTHON_BASE_IMAGE ?= python:3.12-slim-bookworm
 CN_PYTHON_BASE_IMAGE ?= docker.1ms.run/library/python:3.12-slim-bookworm
 CN_APT_MIRROR ?= https://mirrors.tuna.tsinghua.edu.cn/debian
@@ -19,7 +18,7 @@ BUILD_CONTEXT_MINIMAX_SKILLS ?= ../../../../zenmind-env/skills-market
 #   make build-cn  # builds the CN-friendly variant of daily-office-pro:latest
 
 build:
-	DOCKER_BUILDKIT=$(DOCKER_BUILDKIT) docker build \
+	docker build \
 		--tag $(IMAGE_NAME):$(TAG) \
 		--build-context minimax_skills=$(BUILD_CONTEXT_MINIMAX_SKILLS) \
 		--build-arg PYTHON_BASE_IMAGE=$(PYTHON_BASE_IMAGE) \
@@ -31,7 +30,7 @@ build:
 		.
 
 build-cn:
-	DOCKER_BUILDKIT=$(DOCKER_BUILDKIT) docker build \
+	docker build \
 		--tag $(IMAGE_NAME):$(TAG) \
 		--build-context minimax_skills=$(BUILD_CONTEXT_MINIMAX_SKILLS) \
 		--build-arg PYTHON_BASE_IMAGE=$(CN_PYTHON_BASE_IMAGE) \
