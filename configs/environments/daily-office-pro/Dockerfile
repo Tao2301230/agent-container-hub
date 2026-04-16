@@ -108,7 +108,7 @@ RUN set -euo pipefail; \
     dotnet_sdk_package="${DOTNET_SDK_PACKAGE}"; \
     if [[ -z "${dotnet_sdk_package}" ]]; then \
         case "${arch}" in \
-            amd64) dotnet_sdk_package="dotnet-sdk-8.0" ;; \
+            amd64) dotnet_sdk_package="dotnet-sdk-10.0" ;; \
             arm64) dotnet_sdk_package="dotnet-sdk-10.0" ;; \
             *) echo "Unsupported architecture for .NET SDK install: ${arch}" >&2; exit 1 ;; \
         esac; \
