@@ -10,6 +10,7 @@ func createSessionRequestToModel(req api.CreateSessionRequest) model.CreateSessi
 		SessionID:       req.SessionID,
 		EnvironmentName: req.EnvironmentName,
 		Cwd:             req.Cwd,
+		Env:             model.CloneMap(req.Env),
 		Labels:          model.CloneMap(req.Labels),
 		Mounts:          append([]model.Mount(nil), req.Mounts...),
 	}

@@ -6,6 +6,7 @@ type CreateSessionRequest struct {
 	SessionID       string
 	EnvironmentName string
 	Cwd             string
+	Env             map[string]string
 	Labels          map[string]string
 	Mounts          []Mount
 }

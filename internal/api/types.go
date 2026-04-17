@@ -10,6 +10,7 @@ type CreateSessionRequest struct {
 	SessionID       string            `json:"session_id"`
 	EnvironmentName string            `json:"environment_name"`
 	Cwd             string            `json:"cwd"`
+	Env             map[string]string `json:"env,omitempty"`
 	Labels          map[string]string `json:"labels"`
 	Mounts          []model.Mount     `json:"mounts"`
 }

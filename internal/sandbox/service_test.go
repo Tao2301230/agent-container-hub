@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -135,6 +136,139 @@ func TestCreateUsesRequestCwdOverride(t *testing.T) {
 	}
 	if fake.lastCreate.Cwd != "/workspace/chat-123" {
 		t.Fatalf("runtime create cwd = %q, want /workspace/chat-123", fake.lastCreate.Cwd)
+	}
+}
+
+func TestCreateMergesRequestEnvOverrides(t *testing.T) {
+	t.Parallel()
+
+	services, cleanup, fake := newTestServices(t)
+	defer cleanup()
+
+	if _, err := services.environments.Upsert(context.Background(), api.UpsertEnvironmentRequest{
+		Name:            "shell",
+		ImageRepository: "busybox",
+		ImageTag:        "latest",
+		DefaultEnv: map[string]string{
+			"NODE_ENV": "development",
+			"PATH":     "/usr/bin",
+		},
+		Enabled: true,
+		Build: model.BuildSpec{
+			Dockerfile: "FROM busybox:latest\nCMD [\"/bin/sh\"]\n",
+		},
+	}); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	created, err := services.sessions.Create(context.Background(), api.CreateSessionRequest{
+		SessionID:       "env-override",
+		EnvironmentName: "shell",
+		Env: map[string]string{
+			"NODE_ENV": "production",
+			"DEBUG":    "0",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	stored, err := services.store.GetSession(context.Background(), created.SessionID)
+	if err != nil {
+		t.Fatalf("GetSession() error = %v", err)
+	}
+
+	wantEnv := map[string]string{
+		"NODE_ENV": "production",
+		"PATH":     "/usr/bin",
+		"DEBUG":    "0",
+	}
+	if !reflect.DeepEqual(stored.Env, wantEnv) {
+		t.Fatalf("stored.Env = %#v, want %#v", stored.Env, wantEnv)
+	}
+	if !reflect.DeepEqual(fake.lastCreate.Env, wantEnv) {
+		t.Fatalf("runtime create env = %#v, want %#v", fake.lastCreate.Env, wantEnv)
+	}
+}
+
+func TestCreateLocalSessionMergesRequestEnvOverrides(t *testing.T) {
+	t.Parallel()
+
+	services, cleanup, fake := newTestServices(t)
+	defer cleanup()
+	fake.name = "local"
+
+	if _, err := services.environments.Upsert(context.Background(), api.UpsertEnvironmentRequest{
+		Name:            "shell",
+		ImageRepository: "busybox",
+		ImageTag:        "latest",
+		DefaultEnv: map[string]string{
+			"NODE_ENV": "development",
+			"PATH":     "/usr/bin",
+		},
+		Enabled: true,
+		Build: model.BuildSpec{
+			Dockerfile: "FROM busybox:latest\nCMD [\"/bin/sh\"]\n",
+		},
+	}); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	created, err := services.sessions.Create(context.Background(), api.CreateSessionRequest{
+		SessionID:       "local-env-override",
+		EnvironmentName: "shell",
+		Env: map[string]string{
+			"NODE_ENV": "production",
+			"DEBUG":    "0",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	stored, err := services.store.GetSession(context.Background(), created.SessionID)
+	if err != nil {
+		t.Fatalf("GetSession() error = %v", err)
+	}
+
+	wantEnv := map[string]string{
+		"NODE_ENV": "production",
+		"PATH":     "/usr/bin",
+		"DEBUG":    "0",
+	}
+	if !reflect.DeepEqual(stored.Env, wantEnv) {
+		t.Fatalf("stored.Env = %#v, want %#v", stored.Env, wantEnv)
+	}
+	if !reflect.DeepEqual(fake.lastCreate.Env, wantEnv) {
+		t.Fatalf("runtime create env = %#v, want %#v", fake.lastCreate.Env, wantEnv)
+	}
+}
+
+func TestCreateRejectsInvalidRequestEnv(t *testing.T) {
+	t.Parallel()
+
+	services, cleanup, _ := newTestServices(t)
+	defer cleanup()
+
+	if _, err := services.environments.Upsert(context.Background(), api.UpsertEnvironmentRequest{
+		Name:            "shell",
+		ImageRepository: "busybox",
+		ImageTag:        "latest",
+		Enabled:         true,
+		Build: model.BuildSpec{
+			Dockerfile: "FROM busybox:latest\nCMD [\"/bin/sh\"]\n",
+		},
+	}); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	_, err := services.sessions.Create(context.Background(), api.CreateSessionRequest{
+		SessionID:       "invalid-env",
+		EnvironmentName: "shell",
+		Env: map[string]string{
+			"BAD-KEY": "1",
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), `env key "BAD-KEY"`) {
+		t.Fatalf("Create() error = %v, want invalid env key", err)
 	}
 }
 
@@ -2881,6 +3015,7 @@ func (s *testSessionService) Create(ctx context.Context, req api.CreateSessionRe
 		SessionID:       req.SessionID,
 		EnvironmentName: req.EnvironmentName,
 		Cwd:             req.Cwd,
+		Env:             model.CloneMap(req.Env),
 		Labels:          model.CloneMap(req.Labels),
 		Mounts:          append([]model.Mount(nil), req.Mounts...),
 	})

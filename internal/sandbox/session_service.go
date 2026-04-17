@@ -82,6 +82,10 @@ func (s *SessionService) Create(ctx context.Context, req model.CreateSessionRequ
 	if err := model.ValidateEnvMap(environment.DefaultEnv, "default_env"); err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrValidation, err)
 	}
+	if err := model.ValidateEnvMap(req.Env, "env"); err != nil {
+		return nil, fmt.Errorf("%w: %s", ErrValidation, err)
+	}
+	env := mergedSessionEnv(environment.DefaultEnv, req.Env)
 
 	req.SessionID = normalizeSessionID(req.SessionID)
 	if req.SessionID == "" {
@@ -150,7 +154,7 @@ func (s *SessionService) Create(ctx context.Context, req model.CreateSessionRequ
 		Name:      sessionID,
 		Image:     imageRef,
 		Cwd:       cwd,
-		Env:       model.CloneMap(environment.DefaultEnv),
+		Env:       model.CloneMap(env),
 		Mounts:    mounts,
 		Resources: environment.Resources,
 		Labels:    containerLabels,
@@ -194,7 +198,7 @@ func (s *SessionService) Create(ctx context.Context, req model.CreateSessionRequ
 		Image:           imageRef,
 		DefaultCwd:      cwd,
 		RootfsPath:      rootfsPath,
-		Env:             model.CloneMap(environment.DefaultEnv),
+		Env:             model.CloneMap(env),
 		Mounts:          append([]model.Mount(nil), mounts...),
 		Resources:       environment.Resources,
 		Labels:          model.CloneMap(req.Labels),
@@ -219,6 +223,7 @@ func (s *SessionService) createLocalSession(ctx context.Context, req model.Creat
 	if err != nil {
 		return nil, err
 	}
+	env := mergedSessionEnv(environment.DefaultEnv, req.Env)
 
 	containerLabels := model.CloneMap(req.Labels)
 	if containerLabels == nil {
@@ -238,7 +243,7 @@ func (s *SessionService) createLocalSession(ctx context.Context, req model.Creat
 		Name:      req.SessionID,
 		Image:     imageRef,
 		Cwd:       cwd,
-		Env:       model.CloneMap(environment.DefaultEnv),
+		Env:       model.CloneMap(env),
 		Mounts:    mounts,
 		Resources: environment.Resources,
 		Labels:    containerLabels,
@@ -273,7 +278,7 @@ func (s *SessionService) createLocalSession(ctx context.Context, req model.Creat
 		Image:           imageRef,
 		DefaultCwd:      cwd,
 		RootfsPath:      "",
-		Env:             model.CloneMap(environment.DefaultEnv),
+		Env:             model.CloneMap(env),
 		Mounts:          append([]model.Mount(nil), mounts...),
 		Resources:       environment.Resources,
 		Labels:          model.CloneMap(req.Labels),
@@ -291,6 +296,17 @@ func (s *SessionService) createLocalSession(ctx context.Context, req model.Creat
 		s.logger.Warn("local session started with non-running state", "session_id", session.ID, "state", started.State)
 	}
 	return response, nil
+}
+
+func mergedSessionEnv(defaultEnv map[string]string, overrides map[string]string) map[string]string {
+	env := model.CloneMap(defaultEnv)
+	for key, value := range overrides {
+		if env == nil {
+			env = make(map[string]string, len(overrides))
+		}
+		env[key] = value
+	}
+	return env
 }
 
 func (s *SessionService) CreateTemplate(context.Context) (*model.SessionCreateTemplate, error) {
