@@ -306,14 +306,15 @@ ${required_paths_json}
   "web": {
     "routePath": "/",
     "portEnvKey": "BIND_ADDR",
-    "defaultPort": 11960
+    "defaultPort": 11960,
+    "portFormat": "host:port"
   },
-  "prerequisites": [
-    "Docker 或 Podman"
-  ],
   "desktop": {
+    "displayOrder": 1,
+    "autoStart": "optional",
     "assetFileName": "$asset_file_name",
-    "bundleTopLevelDir": "$APP_NAME"
+    "bundleTopLevelDir": "$APP_NAME",
+    "systemRequirements": ["docker|podman"]
   }
 }
 EOF
