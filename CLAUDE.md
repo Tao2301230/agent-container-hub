@@ -102,7 +102,7 @@
 
 ## 7. 已知约束
 
-- 默认部署仍是宿主机进程，不是 Docker-in-Docker
+- 启动时强制执行 `docker info` / `podman info` 校验容器 daemon 可达，未通过会 Fatal 退出；不再提供 local 回退模式
 - 当前环境构建只支持平台托管 Dockerfile，不支持 Git 仓库拉取
 - 当前 UI 是轻量嵌入式管理站，不是独立前端工程
 - 当前镜像构建仍依赖宿主机容器引擎权限和 registry 登录状态

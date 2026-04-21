@@ -80,7 +80,7 @@ func TestLoadUsesRenamedDefaultStateDBPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Getwd() error = %v", err)
 	}
-	want := filepath.Join(currentWD, "data", "agent-container-hub.db")
+	want := filepath.Join(currentWD, "data", "hub.db")
 	if cfg.StateDBPath != want {
 		t.Fatalf("StateDBPath = %q, want %q", cfg.StateDBPath, want)
 	}
@@ -120,5 +120,17 @@ func TestLoadParsesDeleteRootfsOnStop(t *testing.T) {
 	}
 	if cfg.DeleteRootfsOnStop {
 		t.Fatal("DeleteRootfsOnStop = true, want false")
+	}
+}
+
+func TestLoadRejectsRemovedLocalEngine(t *testing.T) {
+	t.Setenv("ENGINE", "local")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() error = nil, want rejection for removed local engine")
+	}
+	if err.Error() != removedLocalEngineMessage {
+		t.Fatalf("Load() error = %q, want %q", err.Error(), removedLocalEngineMessage)
 	}
 }

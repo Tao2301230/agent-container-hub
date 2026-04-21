@@ -17,7 +17,7 @@ func TestCLIProviderLifecycleIntegration(t *testing.T) {
 		t.Skip("set SANDBOX_INTEGRATION_RUNTIME and SANDBOX_TEST_IMAGE to run integration test")
 	}
 
-	provider, err := NewAutoProvider(runtimeName, nil)
+	provider, err := NewAutoProvider(context.Background(), runtimeName, nil)
 	if err != nil {
 		t.Fatalf("NewAutoProvider() error = %v", err)
 	}

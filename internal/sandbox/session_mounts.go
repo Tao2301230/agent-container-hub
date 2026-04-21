@@ -51,12 +51,6 @@ func (s *SessionService) buildSessionMounts(environmentMounts, requestMounts []m
 		}
 	}
 
-	if runtime.IsLocalRuntime(s.runtime.Name()) {
-		mounts := append([]model.Mount(nil), normalizedEnvMounts...)
-		mounts = append(mounts, normalizedRequestMounts...)
-		return mounts, callerProvidesWorkspace, nil
-	}
-
 	mounts := append([]model.Mount(nil), normalizedEnvMounts...)
 	mounts = append(mounts, normalizedRequestMounts...)
 	if !callerProvidesWorkspace {

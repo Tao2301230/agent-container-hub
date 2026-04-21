@@ -1,6 +1,6 @@
 # agent-container-hub
 
-`agent-container-hub` 是一个基于宿主机 `docker` / `podman` CLI 的容器会话与环境管理服务，也支持 `ENGINE=local` 时将宿主机伪装成虚拟沙箱后端。
+`agent-container-hub` 是一个基于宿主机 `docker` / `podman` CLI 的容器会话与环境管理服务。
 它同时提供：
 
 - 会话管理：创建、执行、停止、查询长生命周期 sandbox session
@@ -67,11 +67,11 @@ cp .env.example .env
 最少确认这些配置：
 
 - `BIND_ADDR=127.0.0.1:11960`
-- `STATE_DB_PATH=./data/agent-container-hub.db`
+- `STATE_DB_PATH=./data/hub.db`
 - `CONFIG_ROOT=./configs`
 - `ROOTFS_ROOT=./data/rootfs`
 - `BUILD_ROOT=./data/builds`
-- `ENGINE=` 留空自动探测，或显式指定 `docker` / `podman` / `local`
+- `ENGINE=auto` 自动探测，或显式指定 `docker` / `podman`
 
 启动：
 
@@ -186,7 +186,7 @@ PROGRAM_TARGETS=windows make release-program VERSION=v0.1.0 ARCH=amd64
   - 默认值：空
   - 当监听地址不是本地回环地址时必填
 - `STATE_DB_PATH`
-  - 默认值：`./data/agent-container-hub.db`
+  - 默认值：`./data/hub.db`
   - SQLite 运行态数据库路径，保存 `sessions`、`build_jobs`、`session_executions`
 - `CONFIG_ROOT`
   - 默认值：`./configs`
@@ -202,7 +202,7 @@ PROGRAM_TARGETS=windows make release-program VERSION=v0.1.0 ARCH=amd64
   - 可选的会话挂载模板目录；未配置时模板接口返回空模板
 - `ENGINE`
   - 默认值：自动探测
-  - 可选值：`docker`、`podman`、`local`
+  - 可选值：`auto`、`docker`、`podman`
 - `DEFAULT_COMMAND_TIMEOUT`
   - 默认值：`30s`
   - execute 请求未显式提供 `timeout_ms` 时的默认超时
@@ -219,14 +219,15 @@ PROGRAM_TARGETS=windows make release-program VERSION=v0.1.0 ARCH=amd64
 示例：
 
 ```dotenv
-# HTTP listen address. Use 127.0.0.1 for local-only access.
+# HTTP listen address in host:port form.
+# Use 127.0.0.1:11960 for local-only access.
 BIND_ADDR=127.0.0.1:11960
 
 # Optional when binding locally. Required when binding to non-local addresses.
 AUTH_TOKEN=
 
 # Runtime metadata database path for sessions and build jobs.
-STATE_DB_PATH=./data/agent-container-hub.db
+STATE_DB_PATH=./data/hub.db
 
 # Root directory for YAML environment/image configs.
 CONFIG_ROOT=./configs
@@ -237,28 +238,25 @@ ROOTFS_ROOT=./data/rootfs
 # Root directory used for managed image builds and smoke-check temp files.
 BUILD_ROOT=./data/builds
 
-# Optional root directory that provides session mount templates for the UI/API.
-SESSION_MOUNT_TEMPLATE_ROOT=
-
-# Container engine: docker, podman, or local. Leave empty for auto-detection.
-ENGINE=
+# Optional container engine override.
+# Supported values: auto, docker, or podman.
+# Use auto to search for docker first, then podman.
+# Leaving this empty also enables the same auto-detection behavior.
+# Startup validates the selected engine by running `<engine> info`.
+# The legacy local mode has been removed and can no longer be configured.
+ENGINE=auto
 
 # Default timeout used when execute requests omit timeout_ms.
 DEFAULT_COMMAND_TIMEOUT=30s
 
-# Delete the session rootfs directory when a session stops.
-DELETE_ROOTFS_ON_STOP=true
+# Persist execute stdout/stderr into SQLite for future session execution history queries.
+# Set to true only if you want `/executions` to retain logs beyond the current response.
+ENABLE_EXEC_LOG_PERSIST=true
 
-# Persist execute logs into SQLite.
-ENABLE_EXEC_LOG_PERSIST=false
-
-# Max bytes stored per stdout/stderr field in session_executions.
+# Max bytes stored per stdout/stderr field in session_executions when persistence is enabled.
+# Larger values keep more output but grow the SQLite file faster.
 EXEC_LOG_MAX_OUTPUT_BYTES=65536
 ```
-
-`ENGINE=local` 时，会保留现有 session/create/execute/stop API，但命令会直接在宿主机执行。
-这个模式适合把本机伪装成智能体平台可调用的 sandbox backend，不提供容器级隔离，也不支持镜像构建。
-建议仅绑定 `127.0.0.1`，并配合独立系统用户、专用工作目录和文件权限控制使用。
 
 ## API 概览
 
@@ -481,7 +479,7 @@ curl http://127.0.0.1:11960/api/environments/daily-office/agent-prompt
 
 ### Environment YAML
 
-environment 主数据不再保存在 `agent-container-hub.db` 中，而是以 YAML 文件形式维护在：
+environment 主数据不再保存在运行态 SQLite 数据库（默认 `hub.db`）中，而是以 YAML 文件形式维护在：
 
 ```text
 configs/environments/*.yaml
@@ -577,14 +575,6 @@ make build
 ./agent-container-hub
 ```
 
-如果希望在没有 Docker Desktop 的场景下继续提供同一套 session API，可在 `.env` 中显式配置：
-
-```bash
-ENGINE=local
-```
-
-这会让服务以宿主机本地执行模式运行。它适合开发调试或把本机伪装成 sandbox backend，但不会提供容器隔离，也不支持镜像构建。
-
 生产环境建议：
 
 - 将 `STATE_DB_PATH`、`CONFIG_ROOT`、`ROOTFS_ROOT`、`BUILD_ROOT` 指向持久化磁盘
@@ -626,12 +616,12 @@ agent-container-hub/
 - `manifest.json` 是 bundle 根目录固定契约，声明 frontend、API、后端入口和平台脚本
 - `deploy.sh` 只做 bundle 校验和运行目录初始化
 - `start.sh` 默认前台运行，`./start.sh --daemon` 可切到后台
-- `.env` 里配置 `ENGINE=local` 时，`start.sh` 会跳过 Docker / Podman 检查并以本地模式启动
+- `start.sh` 会对 `ENGINE` 指定的容器引擎执行 `info` 校验；daemon 不可达时会直接退出
 - `stop.sh` 只负责停止 `--daemon` 模式启动的本地进程
 - `data/` 与 `run/` 在 `deploy.sh` 或 `start.sh` 首次执行时按需创建
 - 当前项目继续交付 `configs/environments/`，因为它是运行时必需配置
 - 当前项目的管理站 UI 继续内嵌在 Go 二进制中，不提供外部静态资源目录；manifest 的 `frontend` 字段会明确说明前端入口是 `/`、资源前缀是 `/ui/`，并且可直接访问服务端口
-- `ENGINE` 留空或设置为 `docker` / `podman` 时，运行期仍依赖宿主机对应的容器引擎可用
+- `ENGINE` 留空或设置为 `docker` / `podman` 时，运行期仍依赖宿主机对应的容器引擎可用且 daemon 可达
 
 ## 常见排查
 

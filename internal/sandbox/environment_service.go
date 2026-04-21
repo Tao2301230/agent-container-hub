@@ -17,7 +17,6 @@ type imageMetadataProvider interface {
 
 type environmentRuntime interface {
 	imageInspector
-	Name() string
 }
 
 type BuildJobQuerier interface {
@@ -50,10 +49,10 @@ func (s *EnvironmentService) Upsert(ctx context.Context, req model.UpsertEnviron
 	if err := model.ValidateEnvironmentName(name); err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrValidation, err)
 	}
-	if !runtime.IsLocalRuntime(s.runtime.Name()) && strings.TrimSpace(req.ImageRepository) == "" {
+	if strings.TrimSpace(req.ImageRepository) == "" {
 		return nil, fmt.Errorf("%w: image_repository is required", ErrValidation)
 	}
-	if !runtime.IsLocalRuntime(s.runtime.Name()) && strings.TrimSpace(req.ImageTag) == "" {
+	if strings.TrimSpace(req.ImageTag) == "" {
 		return nil, fmt.Errorf("%w: image_tag is required", ErrValidation)
 	}
 	if err := model.ValidateEnvMap(req.DefaultEnv, "default_env"); err != nil {
@@ -245,33 +244,27 @@ func (s *EnvironmentService) toView(ctx context.Context, environment *model.Envi
 		if metadata, ok := options.imageMetadata[response.ImageRef]; ok {
 			response.Available = true
 			response.ImageMetadata = imageMetadataToView(metadata)
-		} else if runtime.IsLocalRuntime(s.runtime.Name()) {
-			response.Available = true
 		} else {
 			response.Available = false
 		}
 	} else {
-		if runtime.IsLocalRuntime(s.runtime.Name()) {
-			response.Available = true
+		info, available, err := inspectLocalImage(ctx, s.runtime, environment.ImageRef(), s.logger)
+		if err != nil {
+			if s.logger != nil {
+				s.logger.Warn("image inspect unavailable, returning environment without image metadata",
+					"environment", environment.Name,
+					"image", response.ImageRef,
+					"error", err,
+				)
+			}
+			response.Available = false
 		} else {
-			info, available, err := inspectLocalImage(ctx, s.runtime, environment.ImageRef(), s.logger)
-			if err != nil {
-				if s.logger != nil {
-					s.logger.Warn("image inspect unavailable, returning environment without image metadata",
-						"environment", environment.Name,
-						"image", response.ImageRef,
-						"error", err,
-					)
-				}
-				response.Available = false
-			} else {
-				response.Available = available
-				if available {
-					response.ImageMetadata = imageMetadataToView(runtime.ImageMetadata{
-						Ref:       info.Ref,
-						CreatedAt: info.CreatedAt,
-					})
-				}
+			response.Available = available
+			if available {
+				response.ImageMetadata = imageMetadataToView(runtime.ImageMetadata{
+					Ref:       info.Ref,
+					CreatedAt: info.CreatedAt,
+				})
 			}
 		}
 	}

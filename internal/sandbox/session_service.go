@@ -65,19 +65,17 @@ func (s *SessionService) Create(ctx context.Context, req model.CreateSessionRequ
 	if !environment.Enabled {
 		return nil, fmt.Errorf("%w: environment is disabled", ErrValidation)
 	}
-	if !runtime.IsLocalRuntime(s.runtime.Name()) {
-		available, err := inspectLocalImageAvailability(ctx, s.runtime, environment.ImageRef(), s.logger)
-		if err != nil {
-			s.logger.Error("image availability check failed",
-				"environment", environmentName,
-				"image", environment.ImageRef(),
-				"error", err,
-			)
-			return nil, err
-		}
-		if !available {
-			return nil, fmt.Errorf("%w: image %q not found locally", ErrValidation, environment.ImageRef())
-		}
+	available, err := inspectLocalImageAvailability(ctx, s.runtime, environment.ImageRef(), s.logger)
+	if err != nil {
+		s.logger.Error("image availability check failed",
+			"environment", environmentName,
+			"image", environment.ImageRef(),
+			"error", err,
+		)
+		return nil, err
+	}
+	if !available {
+		return nil, fmt.Errorf("%w: image %q not found locally", ErrValidation, environment.ImageRef())
 	}
 	if err := model.ValidateEnvMap(environment.DefaultEnv, "default_env"); err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrValidation, err)
@@ -112,10 +110,6 @@ func (s *SessionService) Create(ctx context.Context, req model.CreateSessionRequ
 		return nil, err
 	}
 
-	if runtime.IsLocalRuntime(s.runtime.Name()) {
-		return s.createLocalSession(ctx, req, environment, startedAt)
-	}
-
 	rootfsPath := filepath.Join(s.cfg.RootfsRoot, sessionID)
 	if err := os.MkdirAll(rootfsPath, 0o755); err != nil {
 		return nil, fmt.Errorf("create rootfs: %w", err)
@@ -146,9 +140,6 @@ func (s *SessionService) Create(ctx context.Context, req model.CreateSessionRequ
 
 	cwd := sessionDefaultCwd(req.Cwd, environment.DefaultCwd)
 	imageRef := strings.TrimSpace(environment.ImageRef())
-	if runtime.IsLocalRuntime(s.runtime.Name()) && imageRef == "" {
-		imageRef = runtime.LocalImageRef
-	}
 
 	info, err := s.runtime.Create(ctx, runtime.CreateOptions{
 		Name:      sessionID,
@@ -214,86 +205,6 @@ func (s *SessionService) Create(ctx context.Context, req model.CreateSessionRequ
 	s.logger.Info("session created", "session_id", session.ID, "environment", session.EnvironmentName, "image", session.Image)
 	if started.State != runtime.ContainerRunning {
 		s.logger.Warn("session started with non-running state", "session_id", session.ID, "state", started.State)
-	}
-	return response, nil
-}
-
-func (s *SessionService) createLocalSession(ctx context.Context, req model.CreateSessionRequest, environment *model.Environment, startedAt time.Time) (*model.CreateSessionResult, error) {
-	mounts, _, err := s.buildSessionMounts(environment.Mounts, req.Mounts, "")
-	if err != nil {
-		return nil, err
-	}
-	env := mergedSessionEnv(environment.DefaultEnv, req.Env)
-
-	containerLabels := model.CloneMap(req.Labels)
-	if containerLabels == nil {
-		containerLabels = make(map[string]string)
-	}
-	containerLabels[runtime.SessionIDLabel] = req.SessionID
-	containerLabels[runtime.CreatedAtLabel] = time.Now().UTC().Format(time.RFC3339Nano)
-	containerLabels["sandbox.environment"] = environment.Name
-
-	cwd := localSessionDefaultCwd(req.Cwd, environment.DefaultCwd)
-	imageRef := strings.TrimSpace(environment.ImageRef())
-	if imageRef == "" {
-		imageRef = runtime.LocalImageRef
-	}
-
-	info, err := s.runtime.Create(ctx, runtime.CreateOptions{
-		Name:      req.SessionID,
-		Image:     imageRef,
-		Cwd:       cwd,
-		Env:       model.CloneMap(env),
-		Mounts:    mounts,
-		Resources: environment.Resources,
-		Labels:    containerLabels,
-	})
-	if err != nil {
-		if errors.Is(err, runtime.ErrContainerExists) {
-			return nil, fmt.Errorf("%w: session already exists", ErrConflict)
-		}
-		s.logger.Error("local session create runtime failed",
-			"session_id", req.SessionID,
-			"environment", environment.Name,
-			"cwd", cwd,
-			"error", err,
-		)
-		return nil, err
-	}
-	started, err := s.runtime.Start(ctx, info.ID)
-	if err != nil {
-		s.logger.Error("local session start failed",
-			"session_id", req.SessionID,
-			"environment", environment.Name,
-			"container_id", info.ID,
-			"error", err,
-		)
-		return nil, err
-	}
-
-	session := &model.Session{
-		ID:              req.SessionID,
-		ContainerID:     info.ID,
-		EnvironmentName: environment.Name,
-		Image:           imageRef,
-		DefaultCwd:      cwd,
-		RootfsPath:      "",
-		Env:             model.CloneMap(env),
-		Mounts:          append([]model.Mount(nil), mounts...),
-		Resources:       environment.Resources,
-		Labels:          model.CloneMap(req.Labels),
-		Status:          model.SessionStatusActive,
-		CreatedAt:       time.Now().UTC(),
-	}
-	if err := s.store.SaveSession(ctx, session); err != nil {
-		return nil, err
-	}
-
-	response := sessionToCreateResult(session, durationMilliseconds(startedAt, time.Now().UTC()))
-	response.Status = model.SessionStatusActive
-	s.logger.Info("local session created", "session_id", session.ID, "environment", session.EnvironmentName, "cwd", session.DefaultCwd)
-	if started.State != runtime.ContainerRunning {
-		s.logger.Warn("local session started with non-running state", "session_id", session.ID, "state", started.State)
 	}
 	return response, nil
 }
@@ -444,18 +355,6 @@ func (s *SessionService) Stop(ctx context.Context, sessionID string) (*model.Sto
 	target := sessionID
 	if session.ContainerID != "" {
 		target = session.ContainerID
-	}
-	if runtime.IsLocalRuntime(s.runtime.Name()) {
-		_ = s.runtime.Stop(ctx, target, sessionStopTimeout)
-		_ = s.runtime.Remove(ctx, target)
-		if err := s.markSessionStopped(ctx, session, time.Now().UTC(), false); err != nil {
-			return nil, err
-		}
-		return &model.StopSessionResult{
-			SessionID:  sessionID,
-			Status:     model.SessionStatusStopped,
-			DurationMS: durationMilliseconds(startedAt, time.Now().UTC()),
-		}, nil
 	}
 	if err := s.runtime.Stop(ctx, target, sessionStopTimeout); err != nil && !errors.Is(err, runtime.ErrContainerNotFound) {
 		s.logger.Error("session stop failed",

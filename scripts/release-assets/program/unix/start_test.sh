@@ -36,13 +36,13 @@ assert_contains() {
 
 make_bundle() {
   local bundle_dir="$1"
-  mkdir -p "$bundle_dir/backend" "$bundle_dir/configs/environments" "$bundle_dir/scripts"
+  mkdir -p "$bundle_dir/backend" "$bundle_dir/bin" "$bundle_dir/configs/environments" "$bundle_dir/scripts"
   cat >"$bundle_dir/manifest.json" <<'EOF'
 {"id":"agent-container-hub"}
 EOF
   cat >"$bundle_dir/.env" <<'EOF'
 BIND_ADDR=127.0.0.1:11960
-ENGINE=local
+ENGINE=auto
 EOF
   cp "$bundle_dir/.env" "$bundle_dir/.env.example"
   cat >"$bundle_dir/backend/agent-container-hub" <<'EOF'
@@ -56,6 +56,18 @@ EOF
   chmod +x "$bundle_dir/start.sh"
   chmod +x "$bundle_dir/stop.sh"
   chmod +x "$bundle_dir/scripts/program-common.sh"
+}
+
+make_fake_engine() {
+  local bundle_dir="$1"
+  cat >"$bundle_dir/bin/docker" <<'EOF'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "info" ]]; then
+  exit 0
+fi
+exit 1
+EOF
+  chmod +x "$bundle_dir/bin/docker"
 }
 
 test_missing_env_fails_fast() {
@@ -79,13 +91,18 @@ test_missing_env_fails_fast() {
   assert_contains "$output" "missing .env"
 }
 
-test_local_mode_creates_runtime_dirs_and_stops_cleanly() {
-  local bundle_dir="$TMP_ROOT/local-mode"
+test_explicit_engine_creates_runtime_dirs_and_stops_cleanly() {
+  local bundle_dir="$TMP_ROOT/explicit-engine"
   make_bundle "$bundle_dir"
+  make_fake_engine "$bundle_dir"
+  cat >"$bundle_dir/.env" <<'EOF'
+BIND_ADDR=127.0.0.1:11960
+ENGINE=docker
+EOF
   local output
   output="$(
     cd "$bundle_dir" &&
-      PATH="$SAFE_PATH" /bin/bash ./start.sh --daemon 2>&1
+      PATH="$bundle_dir/bin:$SAFE_PATH" /bin/bash ./start.sh --daemon 2>&1
   )"
   assert_contains "$output" "started agent-container-hub in daemon mode"
   [[ -d "$bundle_dir/data" ]] || { echo "expected data dir to be created" >&2; exit 1; }
@@ -97,7 +114,7 @@ test_local_mode_creates_runtime_dirs_and_stops_cleanly() {
 
   output="$(
     cd "$bundle_dir" &&
-      PATH="$SAFE_PATH" /bin/bash ./stop.sh 2>&1
+      PATH="$bundle_dir/bin:$SAFE_PATH" /bin/bash ./stop.sh 2>&1
   )"
   assert_contains "$output" "stopped agent-container-hub"
 }
@@ -105,20 +122,21 @@ test_local_mode_creates_runtime_dirs_and_stops_cleanly() {
 test_invalid_pid_file_is_treated_as_stale() {
   local bundle_dir="$TMP_ROOT/invalid-pid"
   make_bundle "$bundle_dir"
+  make_fake_engine "$bundle_dir"
   mkdir -p "$bundle_dir/run"
   printf 'not-a-pid\n' >"$bundle_dir/run/agent-container-hub.pid"
 
   local output
   output="$(
     cd "$bundle_dir" &&
-      PATH="$SAFE_PATH" /bin/bash ./start.sh --daemon 2>&1
+      PATH="$bundle_dir/bin:$SAFE_PATH" /bin/bash ./start.sh --daemon 2>&1
   )"
   assert_contains "$output" "started agent-container-hub in daemon mode"
   [[ -f "$bundle_dir/run/agent-container-hub.pid" ]] || { echo "expected pid file to be recreated" >&2; exit 1; }
 
   output="$(
     cd "$bundle_dir" &&
-      PATH="$SAFE_PATH" /bin/bash ./stop.sh 2>&1
+      PATH="$bundle_dir/bin:$SAFE_PATH" /bin/bash ./stop.sh 2>&1
   )"
   assert_contains "$output" "stopped agent-container-hub"
 }
@@ -146,6 +164,47 @@ EOF
   assert_contains "$output" "docker or podman is required in PATH"
 }
 
+test_auto_detect_succeeds_with_fake_engine() {
+  local bundle_dir="$TMP_ROOT/auto-detect-success"
+  make_bundle "$bundle_dir"
+  make_fake_engine "$bundle_dir"
+  cat >"$bundle_dir/.env" <<'EOF'
+BIND_ADDR=127.0.0.1:11960
+EOF
+
+  local output
+  output="$(
+    cd "$bundle_dir" &&
+      PATH="$bundle_dir/bin:$SAFE_PATH" /bin/bash ./start.sh --daemon 2>&1
+  )"
+  assert_contains "$output" "started agent-container-hub in daemon mode"
+
+  output="$(
+    cd "$bundle_dir" &&
+      PATH="$bundle_dir/bin:$SAFE_PATH" /bin/bash ./stop.sh 2>&1
+  )"
+  assert_contains "$output" "stopped agent-container-hub"
+}
+
+test_auto_alias_succeeds_with_fake_engine() {
+  local bundle_dir="$TMP_ROOT/auto-alias-success"
+  make_bundle "$bundle_dir"
+  make_fake_engine "$bundle_dir"
+
+  local output
+  output="$(
+    cd "$bundle_dir" &&
+      PATH="$bundle_dir/bin:$SAFE_PATH" /bin/bash ./start.sh --daemon 2>&1
+  )"
+  assert_contains "$output" "started agent-container-hub in daemon mode"
+
+  output="$(
+    cd "$bundle_dir" &&
+      PATH="$bundle_dir/bin:$SAFE_PATH" /bin/bash ./stop.sh 2>&1
+  )"
+  assert_contains "$output" "stopped agent-container-hub"
+}
+
 test_invalid_explicit_engine_fails_fast() {
   local bundle_dir="$TMP_ROOT/invalid-engine"
   make_bundle "$bundle_dir"
@@ -170,10 +229,34 @@ EOF
   assert_contains "$output" "ENGINE=missing-engine is not available in PATH"
 }
 
+test_removed_local_engine_fails_fast() {
+  local bundle_dir="$TMP_ROOT/removed-local-engine"
+  make_bundle "$bundle_dir"
+  printf 'BIND_ADDR=127.0.0.1:11960\nENGINE=%s\n' "local" >"$bundle_dir/.env"
+
+  set +e
+  local output
+  output="$(
+    cd "$bundle_dir" &&
+      PATH="$SAFE_PATH" /bin/bash ./start.sh --daemon 2>&1
+  )"
+  local status=$?
+  set -e
+
+  [[ $status -ne 0 ]] || {
+    echo "expected removed local engine to fail" >&2
+    exit 1
+  }
+  assert_contains "$output" "ENGINE=""local has been removed; use auto, docker, or podman"
+}
+
 test_missing_env_fails_fast
-test_local_mode_creates_runtime_dirs_and_stops_cleanly
+test_explicit_engine_creates_runtime_dirs_and_stops_cleanly
 test_invalid_pid_file_is_treated_as_stale
 test_auto_detect_requires_engine_in_path
+test_auto_detect_succeeds_with_fake_engine
+test_auto_alias_succeeds_with_fake_engine
 test_invalid_explicit_engine_fails_fast
+test_removed_local_engine_fails_fast
 
 echo "start.sh tests passed"

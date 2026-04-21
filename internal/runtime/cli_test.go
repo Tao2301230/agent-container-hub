@@ -256,6 +256,27 @@ func TestCLIProviderListImageMetadata(t *testing.T) {
 	}
 }
 
+func TestNewAutoProviderTreatsAutoAsAutoDetect(t *testing.T) {
+	binary, logPath := writeFakeRuntimeBinary(t)
+	t.Setenv("PATH", filepath.Dir(binary))
+
+	provider, err := NewAutoProvider(context.Background(), "auto", nil)
+	if err != nil {
+		t.Fatalf("NewAutoProvider() error = %v", err)
+	}
+	if provider.Name() != "docker" {
+		t.Fatalf("provider.Name() = %q, want %q", provider.Name(), "docker")
+	}
+
+	logData, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if !strings.Contains(string(logData), "info --format {{.ServerVersion}}") {
+		t.Fatalf("log = %q, want engine probe call", string(logData))
+	}
+}
+
 func TestParseDockerSystemDFVerboseJSON(t *testing.T) {
 	t.Parallel()
 

@@ -33,26 +33,77 @@ type commandResult struct {
 }
 
 const containerKeepAliveSleepSeconds = 3600
+const engineProbeTimeout = 5 * time.Second
 
-func NewAutoProvider(explicit string, logger *slog.Logger) (Provider, error) {
+func NewAutoProvider(ctx context.Context, explicit string, logger *slog.Logger) (Provider, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if logger == nil {
 		logger = slog.Default()
 	}
-	if explicit != "" {
-		if IsLocalRuntime(explicit) {
-			return NewLocalProvider(), nil
+	explicit = strings.TrimSpace(explicit)
+	if explicit != "" && !strings.EqualFold(explicit, "auto") {
+		resolvedBinary, err := exec.LookPath(explicit)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %s: binary not found in PATH", ErrRuntimeUnavailable, explicit)
 		}
-		if _, err := exec.LookPath(explicit); err != nil {
-			return nil, fmt.Errorf("%w: %s", ErrRuntimeUnavailable, explicit)
+		if err := pingEngine(ctx, resolvedBinary, logger); err != nil {
+			return nil, fmt.Errorf("%w: %s: daemon not reachable: %v", ErrRuntimeUnavailable, explicit, err)
 		}
 		return &CLIProvider{binary: explicit, logger: logger}, nil
 	}
+	var reasons []string
 	for _, candidate := range []string{"docker", "podman"} {
-		if _, err := exec.LookPath(candidate); err == nil {
-			return &CLIProvider{binary: candidate, logger: logger}, nil
+		resolvedBinary, err := exec.LookPath(candidate)
+		if err != nil {
+			reasons = append(reasons, fmt.Sprintf("%s: binary not found in PATH", candidate))
+			continue
 		}
+		if err := pingEngine(ctx, resolvedBinary, logger); err != nil {
+			reasons = append(reasons, fmt.Sprintf("%s: daemon not reachable: %v", candidate, err))
+			continue
+		}
+		return &CLIProvider{binary: candidate, logger: logger}, nil
 	}
-	return nil, ErrRuntimeUnavailable
+	if len(reasons) == 0 {
+		return nil, ErrRuntimeUnavailable
+	}
+	return nil, fmt.Errorf("%w: %s", ErrRuntimeUnavailable, strings.Join(reasons, "; "))
+}
+
+func pingEngine(ctx context.Context, binary string, logger *slog.Logger) error {
+	probeCtx, cancel := context.WithTimeout(ctx, engineProbeTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(probeCtx, binary, "info", "--format", "{{.ServerVersion}}")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	if err == nil {
+		return nil
+	}
+
+	stderrText := strings.TrimSpace(stderr.String())
+	if probeCtx.Err() == context.DeadlineExceeded {
+		if logger != nil {
+			logger.Warn("engine probe timed out", "binary", binary, "stderr", stderrText)
+		}
+		if stderrText != "" {
+			return fmt.Errorf("probe timed out after %s: %s", engineProbeTimeout, stderrText)
+		}
+		return fmt.Errorf("probe timed out after %s", engineProbeTimeout)
+	}
+	if logger != nil {
+		logger.Warn("engine probe failed", "binary", binary, "stderr", stderrText, "stdout", strings.TrimSpace(stdout.String()), "error", err)
+	}
+	if stderrText != "" {
+		return fmt.Errorf("%s", stderrText)
+	}
+	return err
 }
 
 func (p *CLIProvider) Name() string {

@@ -18,13 +18,11 @@ var (
 )
 
 const (
-	ManagedByLabel    = "sandbox.managed_by"
-	SessionIDLabel    = "sandbox.session_id"
-	RootfsLabel       = "sandbox.rootfs"
-	CreatedAtLabel    = "sandbox.created_at"
-	DefaultMountPath  = "/workspace"
-	LocalProviderName = "local"
-	LocalImageRef     = "local://host"
+	ManagedByLabel   = "sandbox.managed_by"
+	SessionIDLabel   = "sandbox.session_id"
+	RootfsLabel      = "sandbox.rootfs"
+	CreatedAtLabel   = "sandbox.created_at"
+	DefaultMountPath = "/workspace"
 )
 
 type ContainerState string
@@ -111,8 +109,4 @@ type Provider interface {
 	Inspect(context.Context, string) (ContainerInfo, error)
 	InspectImage(context.Context, string) (ImageInfo, error)
 	ListByLabel(context.Context, string, string) ([]ContainerInfo, error)
-}
-
-func IsLocalRuntime(name string) bool {
-	return name == LocalProviderName
 }

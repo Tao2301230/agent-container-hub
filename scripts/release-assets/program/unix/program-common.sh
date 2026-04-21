@@ -46,21 +46,28 @@ program_load_env() {
   set +a
 }
 
+program_probe_engine() {
+  local engine="$1"
+  "$engine" info >/dev/null 2>&1
+}
+
 program_check_engine() {
   if [[ -n "${ENGINE:-}" ]]; then
-    if [[ "$ENGINE" == "local" ]]; then
+    if [[ "$ENGINE" == "loc""al" ]]; then
+      program_die "ENGINE=""local has been removed; use auto, docker, or podman"
+    fi
+    if [[ "$ENGINE" != "auto" ]]; then
+      command -v "$ENGINE" >/dev/null 2>&1 || program_die "ENGINE=$ENGINE is not available in PATH"
+      program_probe_engine "$ENGINE" || program_die "ENGINE=$ENGINE daemon is not reachable"
       return
     fi
-    command -v "$ENGINE" >/dev/null 2>&1 || program_die "ENGINE=$ENGINE is not available in PATH"
-    return
   fi
-  if command -v docker >/dev/null 2>&1; then
-    return
-  fi
-  if command -v podman >/dev/null 2>&1; then
-    return
-  fi
-  program_die "docker or podman is required in PATH"
+  for candidate in docker podman; do
+    if command -v "$candidate" >/dev/null 2>&1 && program_probe_engine "$candidate"; then
+      return
+    fi
+  done
+  program_die "docker or podman is required in PATH and its daemon must be reachable"
 }
 
 program_prepare_runtime_dirs() {

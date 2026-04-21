@@ -214,57 +214,23 @@ func TestAuthProtectsAppAndAPI(t *testing.T) {
 func TestRuntimeInfoEndpointReturnsEngineName(t *testing.T) {
 	t.Parallel()
 
-	handler, _ := newTestHandlerWithServerOptions(t, "", Options{EngineName: "local"})
+	handler, _ := newTestHandlerWithServerOptions(t, "", Options{EngineName: "docker"})
 
 	response := doJSON[map[string]string](t, handler, http.MethodGet, "/api/runtime-info", nil, http.StatusOK, "")
-	if response["engine"] != "local" {
-		t.Fatalf("engine = %q, want local", response["engine"])
+	if response["engine"] != "docker" {
+		t.Fatalf("engine = %q, want docker", response["engine"])
 	}
 }
 
 func TestRuntimeInfoEndpointRequiresAuth(t *testing.T) {
 	t.Parallel()
 
-	handler, _ := newTestHandlerWithServerOptions(t, "secret", Options{EngineName: "local"})
+	handler, _ := newTestHandlerWithServerOptions(t, "secret", Options{EngineName: "docker"})
 	req := httptest.NewRequest(http.MethodGet, "/api/runtime-info", nil)
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
 	if recorder.Code != http.StatusUnauthorized {
 		t.Fatalf("GET /api/runtime-info status = %d, want 401", recorder.Code)
-	}
-}
-
-func TestCreateSessionAllowsNonWorkspaceMountsInLocalRuntime(t *testing.T) {
-	t.Parallel()
-
-	handler, _, fake := newTestHandlerWithRuntimeAndOptions(t, "", Options{})
-	fake.name = runtime.LocalProviderName
-
-	skillsDir := t.TempDir()
-	_ = doJSON[api.EnvironmentResponse](t, handler, http.MethodPost, "/api/environments", api.UpsertEnvironmentRequest{
-		Name:       "shell",
-		Enabled:    true,
-		DefaultCwd: runtime.DefaultMountPath,
-		Mounts: []model.Mount{{
-			Source:      skillsDir,
-			Destination: "/skills",
-		}},
-	}, http.StatusOK, "")
-
-	created := doJSON[api.CreateSessionResponse](t, handler, http.MethodPost, "/api/sessions/create", api.CreateSessionRequest{
-		SessionID:       "local-http-mounts",
-		EnvironmentName: "shell",
-	}, http.StatusOK, "")
-	if created.RootfsPath != "" {
-		t.Fatalf("RootfsPath = %q, want empty", created.RootfsPath)
-	}
-	if len(created.Mounts) != 1 || created.Mounts[0].Destination != "/skills" {
-		t.Fatalf("Mounts = %+v, want only /skills", created.Mounts)
-	}
-
-	stopped := doJSON[api.StopSessionResponse](t, handler, http.MethodPost, "/api/sessions/local-http-mounts/stop", nil, http.StatusOK, "")
-	if stopped.Status != "stopped" {
-		t.Fatalf("Stop status = %q, want stopped", stopped.Status)
 	}
 }
 

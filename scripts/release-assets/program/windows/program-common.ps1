@@ -58,20 +58,29 @@ function Test-ProgramEngine {
   $engine = [Environment]::GetEnvironmentVariable('ENGINE', 'Process')
   if (-not [string]::IsNullOrWhiteSpace($engine)) {
     if ($engine -eq 'local') {
+      Fail-Program ('ENGINE=' + 'local has been removed; use auto, docker, or podman')
+    }
+    if ($engine -ne 'auto') {
+      if (-not (Get-Command $engine -ErrorAction SilentlyContinue)) {
+        Fail-Program "ENGINE=$engine is not available in PATH"
+      }
+      & $engine info *> $null
+      if ($LASTEXITCODE -ne 0) {
+        Fail-Program "ENGINE=$engine daemon is not reachable"
+      }
       return
     }
-    if (-not (Get-Command $engine -ErrorAction SilentlyContinue)) {
-      Fail-Program "ENGINE=$engine is not available in PATH"
+  }
+  foreach ($candidate in @('docker', 'podman')) {
+    if (-not (Get-Command $candidate -ErrorAction SilentlyContinue)) {
+      continue
     }
-    return
+    & $candidate info *> $null
+    if ($LASTEXITCODE -eq 0) {
+      return
+    }
   }
-  if (Get-Command docker -ErrorAction SilentlyContinue) {
-    return
-  }
-  if (Get-Command podman -ErrorAction SilentlyContinue) {
-    return
-  }
-  Fail-Program 'docker or podman is required in PATH'
+  Fail-Program 'docker or podman is required in PATH and its daemon must be reachable'
 }
 
 function Initialize-ProgramRuntime {

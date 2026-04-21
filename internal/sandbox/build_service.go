@@ -98,9 +98,6 @@ func NewBuildService(lifecycleCtx context.Context, cfg config.Config, st store.B
 }
 
 func (s *BuildService) StartBuildJob(ctx context.Context, name string, req model.BuildEnvironmentRequest) (*model.BuildJob, error) {
-	if runtime.IsLocalRuntime(s.runtime.Name()) {
-		return nil, fmt.Errorf("%w: build is not supported when ENGINE=local", ErrValidation)
-	}
 	environment, release, err := s.prepareBuild(ctx, name)
 	if err != nil {
 		return nil, err
@@ -219,9 +216,6 @@ func (s *BuildService) LatestBuildJob(ctx context.Context, environmentName strin
 }
 
 func (s *BuildService) ReconcileExistingImages(ctx context.Context) error {
-	if runtime.IsLocalRuntime(s.runtime.Name()) {
-		return nil
-	}
 	environments, err := s.envs.ListEnvironments(ctx)
 	if err != nil {
 		return err

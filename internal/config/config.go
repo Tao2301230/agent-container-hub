@@ -26,6 +26,8 @@ type Config struct {
 	ExecLogMaxOutputBytes    int
 }
 
+const removedLocalEngineMessage = "ENGINE=" + "local has been removed; set ENGINE to docker, podman, or auto, or leave empty for auto-detect"
+
 func Load() (Config, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -34,7 +36,7 @@ func Load() (Config, error) {
 	cfg := Config{
 		BindAddr:                 getEnv("BIND_ADDR", "127.0.0.1:8080"),
 		AuthToken:                strings.TrimSpace(os.Getenv("AUTH_TOKEN")),
-		StateDBPath:              getEnv("STATE_DB_PATH", filepath.Join(cwd, "data", "agent-container-hub.db")),
+		StateDBPath:              getEnv("STATE_DB_PATH", filepath.Join(cwd, "data", "hub.db")),
 		ConfigRoot:               getEnv("CONFIG_ROOT", filepath.Join(cwd, "configs")),
 		RootfsRoot:               getEnv("ROOTFS_ROOT", filepath.Join(cwd, "data", "rootfs")),
 		BuildRoot:                getEnv("BUILD_ROOT", filepath.Join(cwd, "data", "builds")),
@@ -71,6 +73,9 @@ func Load() (Config, error) {
 func (c Config) Validate() error {
 	if c.BindAddr == "" {
 		return fmt.Errorf("bind address is required")
+	}
+	if strings.EqualFold(c.Engine, "local") {
+		return fmt.Errorf(removedLocalEngineMessage)
 	}
 	host, _, err := net.SplitHostPort(c.BindAddr)
 	if err != nil {

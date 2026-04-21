@@ -24,4 +24,4 @@ Layout notes:
 - manifest.json is the host-facing bundle contract and declares the embedded UI entry at /app.
 - configs/environments remains in the bundle because it is the runtime source of truth for environment definitions.
 - data/ and run/ are created on first deploy/start and are not pre-created in the archive.
-- If ENGINE is empty, the service auto-detects docker or podman. Set ENGINE=local to skip container-engine checks and run in local mode.
+- If ENGINE=auto, or if ENGINE is empty, the service auto-detects docker first and then podman. Startup validates the selected engine with `info` and exits if the daemon is unreachable.
