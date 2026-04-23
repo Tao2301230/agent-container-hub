@@ -64,8 +64,18 @@ function Test-ProgramEngine {
       if (-not (Get-Command $engine -ErrorAction SilentlyContinue)) {
         Fail-Program "ENGINE=$engine is not available in PATH"
       }
-      & $engine info *> $null
-      if ($LASTEXITCODE -ne 0) {
+      $reachable = $false
+      $savedEAP = $ErrorActionPreference
+      try {
+        $ErrorActionPreference = 'Continue'
+        & $engine info *> $null
+        $reachable = ($LASTEXITCODE -eq 0)
+      } catch {
+        $reachable = $false
+      } finally {
+        $ErrorActionPreference = $savedEAP
+      }
+      if (-not $reachable) {
         Fail-Program "ENGINE=$engine daemon is not reachable"
       }
       return
@@ -75,8 +85,18 @@ function Test-ProgramEngine {
     if (-not (Get-Command $candidate -ErrorAction SilentlyContinue)) {
       continue
     }
-    & $candidate info *> $null
-    if ($LASTEXITCODE -eq 0) {
+    $reachable = $false
+    $savedEAP = $ErrorActionPreference
+    try {
+      $ErrorActionPreference = 'Continue'
+      & $candidate info *> $null
+      $reachable = ($LASTEXITCODE -eq 0)
+    } catch {
+      $reachable = $false
+    } finally {
+      $ErrorActionPreference = $savedEAP
+    }
+    if ($reachable) {
       return
     }
   }
