@@ -53,6 +53,7 @@ func (s *SQLiteStore) init() error {
 			env_json TEXT NOT NULL DEFAULT '{}',
 			mounts_json TEXT NOT NULL DEFAULT '[]',
 			resources_json TEXT NOT NULL DEFAULT '{}',
+			network_policy_json TEXT NOT NULL DEFAULT '{}',
 			labels_json TEXT NOT NULL DEFAULT '{}',
 			status TEXT NOT NULL,
 			created_at TEXT NOT NULL,
@@ -100,6 +101,9 @@ func (s *SQLiteStore) init() error {
 	if err := s.ensureBuildJobTargetColumn(); err != nil {
 		return err
 	}
+	if err := s.ensureNetworkPolicyColumn(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -113,6 +117,20 @@ func (s *SQLiteStore) ensureBuildJobTargetColumn() error {
 	}
 	if _, err := s.db.Exec(`ALTER TABLE build_jobs ADD COLUMN target TEXT NOT NULL DEFAULT ''`); err != nil {
 		return fmt.Errorf("migrate build_jobs.target: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) ensureNetworkPolicyColumn() error {
+	ok, err := s.tableHasColumn("sessions", "network_policy_json")
+	if err != nil {
+		return err
+	}
+	if ok {
+		return nil
+	}
+	if _, err := s.db.Exec(`ALTER TABLE sessions ADD COLUMN network_policy_json TEXT NOT NULL DEFAULT '{}'`); err != nil {
+		return fmt.Errorf("migrate sessions.network_policy_json: %w", err)
 	}
 	return nil
 }
@@ -156,6 +174,10 @@ func (s *SQLiteStore) SaveSession(_ context.Context, session *model.Session) err
 	if err != nil {
 		return fmt.Errorf("marshal session resources: %w", err)
 	}
+	networkPolicyJSON, err := marshalJSON(session.NetworkPolicy, "{}")
+	if err != nil {
+		return fmt.Errorf("marshal session network policy: %w", err)
+	}
 	labelsJSON, err := marshalJSON(session.Labels, "{}")
 	if err != nil {
 		return fmt.Errorf("marshal session labels: %w", err)
@@ -169,8 +191,8 @@ func (s *SQLiteStore) SaveSession(_ context.Context, session *model.Session) err
 	_, err = s.db.Exec(`
 		INSERT INTO sessions (
 			session_id, container_id, environment_name, image, default_cwd, rootfs_path,
-			env_json, mounts_json, resources_json, labels_json, status, created_at, stopped_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			env_json, mounts_json, resources_json, network_policy_json, labels_json, status, created_at, stopped_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(session_id) DO UPDATE SET
 			container_id=excluded.container_id,
 			environment_name=excluded.environment_name,
@@ -180,12 +202,13 @@ func (s *SQLiteStore) SaveSession(_ context.Context, session *model.Session) err
 			env_json=excluded.env_json,
 			mounts_json=excluded.mounts_json,
 			resources_json=excluded.resources_json,
+			network_policy_json=excluded.network_policy_json,
 			labels_json=excluded.labels_json,
 			status=excluded.status,
 			created_at=excluded.created_at,
 			stopped_at=excluded.stopped_at
 	`, session.ID, session.ContainerID, session.EnvironmentName, session.Image, session.DefaultCwd, session.RootfsPath,
-		envJSON, mountsJSON, resourcesJSON, labelsJSON, string(session.Status), session.CreatedAt.UTC().Format(time.RFC3339Nano), stoppedAt)
+		envJSON, mountsJSON, resourcesJSON, networkPolicyJSON, labelsJSON, string(session.Status), session.CreatedAt.UTC().Format(time.RFC3339Nano), stoppedAt)
 	if err != nil {
 		return fmt.Errorf("save session: %w", err)
 	}
@@ -195,7 +218,7 @@ func (s *SQLiteStore) SaveSession(_ context.Context, session *model.Session) err
 func (s *SQLiteStore) GetSession(_ context.Context, id string) (*model.Session, error) {
 	row := s.db.QueryRow(`
 		SELECT session_id, container_id, environment_name, image, default_cwd, rootfs_path,
-		       env_json, mounts_json, resources_json, labels_json, status, created_at, stopped_at
+		       env_json, mounts_json, resources_json, network_policy_json, labels_json, status, created_at, stopped_at
 		FROM sessions
 		WHERE session_id = ?
 	`, id)
@@ -267,7 +290,7 @@ func (s *SQLiteStore) QuerySessions(_ context.Context, query SessionQuery) ([]*m
 	queryArgs := append(append([]any(nil), args...), pageSize, (page-1)*pageSize)
 	rows, err := s.db.Query(`
 		SELECT session_id, container_id, environment_name, image, default_cwd, rootfs_path,
-		       env_json, mounts_json, resources_json, labels_json, status, created_at, stopped_at
+		       env_json, mounts_json, resources_json, network_policy_json, labels_json, status, created_at, stopped_at
 		FROM sessions`+whereSQL+`
 		ORDER BY created_at DESC, session_id DESC
 		LIMIT ? OFFSET ?
@@ -451,7 +474,7 @@ type rowScanner interface {
 
 func scanSession(scanner rowScanner) (*model.Session, error) {
 	var session model.Session
-	var envJSON, mountsJSON, resourcesJSON, labelsJSON string
+	var envJSON, mountsJSON, resourcesJSON, networkPolicyJSON, labelsJSON string
 	var status, createdAt string
 	var stoppedAt sql.NullString
 
@@ -465,6 +488,7 @@ func scanSession(scanner rowScanner) (*model.Session, error) {
 		&envJSON,
 		&mountsJSON,
 		&resourcesJSON,
+		&networkPolicyJSON,
 		&labelsJSON,
 		&status,
 		&createdAt,
@@ -483,6 +507,13 @@ func scanSession(scanner rowScanner) (*model.Session, error) {
 	}
 	if err := unmarshalJSON(resourcesJSON, &session.Resources); err != nil {
 		return nil, fmt.Errorf("decode session resources: %w", err)
+	}
+	var networkPolicy model.NetworkPolicy
+	if err := unmarshalJSON(networkPolicyJSON, &networkPolicy); err != nil {
+		return nil, fmt.Errorf("decode session network policy: %w", err)
+	}
+	if !networkPolicy.IsEmpty() {
+		session.NetworkPolicy = networkPolicy.Clone()
 	}
 	if err := unmarshalJSON(labelsJSON, &session.Labels); err != nil {
 		return nil, fmt.Errorf("decode session labels: %w", err)

@@ -13,6 +13,7 @@ func createSessionRequestToModel(req api.CreateSessionRequest) model.CreateSessi
 		Env:             model.CloneMap(req.Env),
 		Labels:          model.CloneMap(req.Labels),
 		Mounts:          append([]model.Mount(nil), req.Mounts...),
+		NetworkPolicy:   req.NetworkPolicy.Clone(),
 	}
 }
 
@@ -36,6 +37,7 @@ func upsertEnvironmentRequestToModel(req api.UpsertEnvironmentRequest) model.Ups
 		AgentPrompt:     req.AgentPrompt,
 		Mounts:          append([]model.Mount(nil), req.Mounts...),
 		Resources:       req.Resources,
+		NetworkPolicy:   req.NetworkPolicy.Clone(),
 		Enabled:         req.Enabled,
 		DefaultExecute:  req.DefaultExecute.Clone(),
 		Build:           req.Build.Clone(),
@@ -60,6 +62,7 @@ func sessionViewToAPI(session *model.SessionView) *api.SessionResponse {
 		Labels:          model.CloneMap(session.Labels),
 		Resources:       session.Resources,
 		Mounts:          append([]model.Mount(nil), session.Mounts...),
+		NetworkPolicy:   session.NetworkPolicy.Clone(),
 		CreatedAt:       session.CreatedAt,
 		Status:          string(session.Status),
 		StoppedAt:       session.StoppedAt,
@@ -209,6 +212,7 @@ func environmentViewToAPI(view *model.EnvironmentView) *api.EnvironmentResponse 
 		AgentPrompt:           view.AgentPrompt,
 		Mounts:                append([]model.Mount(nil), view.Mounts...),
 		Resources:             view.Resources,
+		NetworkPolicy:         view.NetworkPolicy.Clone(),
 		Enabled:               view.Enabled,
 		DefaultExecute:        view.DefaultExecute.Clone(),
 		Build:                 view.Build.Clone(),

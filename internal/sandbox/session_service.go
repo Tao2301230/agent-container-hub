@@ -83,7 +83,14 @@ func (s *SessionService) Create(ctx context.Context, req model.CreateSessionRequ
 	if err := model.ValidateEnvMap(req.Env, "env"); err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrValidation, err)
 	}
+	if err := model.ValidateNetworkPolicy(environment.NetworkPolicy); err != nil {
+		return nil, fmt.Errorf("%w: environment network_policy: %s", ErrValidation, err)
+	}
+	if err := model.ValidateNetworkPolicy(req.NetworkPolicy); err != nil {
+		return nil, fmt.Errorf("%w: %s", ErrValidation, err)
+	}
 	env := mergedSessionEnv(environment.DefaultEnv, req.Env)
+	networkPolicy := effectiveSessionNetworkPolicy(environment.NetworkPolicy, req.NetworkPolicy)
 
 	req.SessionID = normalizeSessionID(req.SessionID)
 	if req.SessionID == "" {
@@ -142,13 +149,14 @@ func (s *SessionService) Create(ctx context.Context, req model.CreateSessionRequ
 	imageRef := strings.TrimSpace(environment.ImageRef())
 
 	info, err := s.runtime.Create(ctx, runtime.CreateOptions{
-		Name:      sessionID,
-		Image:     imageRef,
-		Cwd:       cwd,
-		Env:       model.CloneMap(env),
-		Mounts:    mounts,
-		Resources: environment.Resources,
-		Labels:    containerLabels,
+		Name:          sessionID,
+		Image:         imageRef,
+		Cwd:           cwd,
+		Env:           model.CloneMap(env),
+		Mounts:        mounts,
+		Resources:     environment.Resources,
+		NetworkPolicy: networkPolicy.Clone(),
+		Labels:        containerLabels,
 	})
 	if err != nil {
 		if rootfsPath != "" {
@@ -181,6 +189,32 @@ func (s *SessionService) Create(ctx context.Context, req model.CreateSessionRequ
 		}
 		return nil, err
 	}
+	if !networkPolicy.IsEmpty() {
+		applier, ok := s.runtime.(runtime.NetworkPolicyApplier)
+		if !ok {
+			err := fmt.Errorf("%w: runtime does not support network policy", ErrValidation)
+			s.warnIfCleanupFails("stop container after network policy unsupported", info.ID, s.runtime.Stop(ctx, info.ID, sessionStopTimeout))
+			s.warnIfCleanupFails("remove container after network policy unsupported", info.ID, s.runtime.Remove(ctx, info.ID))
+			if rootfsPath != "" {
+				s.warnIfCleanupFails("remove rootfs after network policy unsupported", rootfsPath, os.RemoveAll(rootfsPath))
+			}
+			return nil, err
+		}
+		if err := applier.ApplyNetworkPolicy(ctx, info.ID, networkPolicy); err != nil {
+			s.logger.Error("session network policy apply failed",
+				"session_id", sessionID,
+				"environment", environment.Name,
+				"container_id", info.ID,
+				"error", err,
+			)
+			s.warnIfCleanupFails("stop container after network policy apply failed", info.ID, s.runtime.Stop(ctx, info.ID, sessionStopTimeout))
+			s.warnIfCleanupFails("remove container after network policy apply failed", info.ID, s.runtime.Remove(ctx, info.ID))
+			if rootfsPath != "" {
+				s.warnIfCleanupFails("remove rootfs after network policy apply failed", rootfsPath, os.RemoveAll(rootfsPath))
+			}
+			return nil, fmt.Errorf("apply network policy: %w", err)
+		}
+	}
 
 	session := &model.Session{
 		ID:              sessionID,
@@ -192,6 +226,7 @@ func (s *SessionService) Create(ctx context.Context, req model.CreateSessionRequ
 		Env:             model.CloneMap(env),
 		Mounts:          append([]model.Mount(nil), mounts...),
 		Resources:       environment.Resources,
+		NetworkPolicy:   networkPolicy.Clone(),
 		Labels:          model.CloneMap(req.Labels),
 		Status:          model.SessionStatusActive,
 		CreatedAt:       time.Now().UTC(),
@@ -218,6 +253,19 @@ func mergedSessionEnv(defaultEnv map[string]string, overrides map[string]string)
 		env[key] = value
 	}
 	return env
+}
+
+func effectiveSessionNetworkPolicy(environmentPolicy, requestPolicy *model.NetworkPolicy) *model.NetworkPolicy {
+	if requestPolicy != nil {
+		if requestPolicy.IsEmpty() {
+			return nil
+		}
+		return requestPolicy.Clone()
+	}
+	if environmentPolicy.IsEmpty() {
+		return nil
+	}
+	return environmentPolicy.Clone()
 }
 
 func (s *SessionService) CreateTemplate(context.Context) (*model.SessionCreateTemplate, error) {

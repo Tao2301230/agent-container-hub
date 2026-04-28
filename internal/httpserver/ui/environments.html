@@ -116,6 +116,31 @@
 
 					<div class="stack">
 						<div>
+							<h3>Network Policy</h3>
+							<div class="meta">
+								Default outbound IP/CIDR policy for sessions.
+							</div>
+						</div>
+						<div class="row">
+							<label
+								>Whitelist
+								<textarea
+									id="network-policy-whitelist"
+									placeholder="10.0.0.0/8"
+								></textarea>
+							</label>
+							<label
+								>Blacklist
+								<textarea
+									id="network-policy-blacklist"
+									placeholder="8.8.8.8"
+								></textarea>
+							</label>
+						</div>
+					</div>
+
+					<div class="stack">
+						<div>
 							<h3>Quick Execute Preset</h3>
 							<div class="meta">
 								This preset powers the quick execute action on

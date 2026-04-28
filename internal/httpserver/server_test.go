@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -138,6 +139,39 @@ func TestSessionEnvironmentAndUIEndpoints(t *testing.T) {
 	}
 	if contentType := assetRecorder.Header().Get("Content-Type"); contentType == "" || !bytes.Contains([]byte(contentType), []byte("text/css")) {
 		t.Fatalf("GET /ui/styles.css content-type = %q, want text/css", contentType)
+	}
+}
+
+func TestNetworkPolicyRoundTripsThroughHTTP(t *testing.T) {
+	t.Parallel()
+
+	handler := newTestHandler(t, "")
+	envPolicy := &model.NetworkPolicy{Blacklist: []string{"8.8.8.8"}}
+	sessionPolicy := &model.NetworkPolicy{Whitelist: []string{"10.0.0.0/8"}}
+
+	envResp := doJSON[api.EnvironmentResponse](t, handler, http.MethodPost, "/api/environments", api.UpsertEnvironmentRequest{
+		Name:            "shell",
+		ImageRepository: "busybox",
+		ImageTag:        "latest",
+		Enabled:         true,
+		NetworkPolicy:   envPolicy,
+	}, http.StatusOK, "")
+	if !reflect.DeepEqual(envResp.NetworkPolicy, envPolicy) {
+		t.Fatalf("envResp.NetworkPolicy = %#v, want %#v", envResp.NetworkPolicy, envPolicy)
+	}
+
+	createResp := doJSON[api.CreateSessionResponse](t, handler, http.MethodPost, "/api/sessions/create", api.CreateSessionRequest{
+		SessionID:       "network-http-session",
+		EnvironmentName: "shell",
+		NetworkPolicy:   sessionPolicy,
+	}, http.StatusOK, "")
+	if !reflect.DeepEqual(createResp.NetworkPolicy, sessionPolicy) {
+		t.Fatalf("createResp.NetworkPolicy = %#v, want %#v", createResp.NetworkPolicy, sessionPolicy)
+	}
+
+	detail := doJSON[api.SessionResponse](t, handler, http.MethodGet, "/api/sessions/network-http-session", nil, http.StatusOK, "")
+	if !reflect.DeepEqual(detail.NetworkPolicy, sessionPolicy) {
+		t.Fatalf("detail.NetworkPolicy = %#v, want %#v", detail.NetworkPolicy, sessionPolicy)
 	}
 }
 
@@ -1851,6 +1885,7 @@ type httpFakeRuntime struct {
 	buildStarted         chan struct{}
 	buildContinue        chan struct{}
 	createErr            error
+	lastNetworkPolicy    *model.NetworkPolicy
 	inspectImageErr      error
 	listImageMetadataErr error
 }
@@ -1887,6 +1922,14 @@ func (f *httpFakeRuntime) Start(_ context.Context, containerID string) (runtime.
 	info.State = runtime.ContainerRunning
 	f.containers[info.ID] = info
 	return info, nil
+}
+
+func (f *httpFakeRuntime) ApplyNetworkPolicy(_ context.Context, containerID string, policy *model.NetworkPolicy) error {
+	if _, ok := f.lookup(containerID); !ok {
+		return runtime.ErrContainerNotFound
+	}
+	f.lastNetworkPolicy = policy.Clone()
+	return nil
 }
 
 func (f *httpFakeRuntime) Exec(_ context.Context, containerID string, _ runtime.ExecOptions) (runtime.ExecResult, error) {

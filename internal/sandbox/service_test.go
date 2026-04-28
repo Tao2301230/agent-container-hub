@@ -104,6 +104,170 @@ func TestSessionCreateExecuteAndStop(t *testing.T) {
 	}
 }
 
+func TestSessionCreateInheritsEnvironmentNetworkPolicy(t *testing.T) {
+	t.Parallel()
+
+	services, cleanup, fake := newTestServices(t)
+	defer cleanup()
+
+	if _, err := services.environments.Upsert(context.Background(), api.UpsertEnvironmentRequest{
+		Name:            "shell",
+		ImageRepository: "busybox",
+		ImageTag:        "latest",
+		Enabled:         true,
+		NetworkPolicy:   &model.NetworkPolicy{Whitelist: []string{"10.0.0.0/8"}, Blacklist: []string{"10.0.0.2"}},
+	}); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	created, err := services.sessions.Create(context.Background(), api.CreateSessionRequest{
+		SessionID:       "network-inherit",
+		EnvironmentName: "shell",
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	want := &model.NetworkPolicy{Whitelist: []string{"10.0.0.0/8"}, Blacklist: []string{"10.0.0.2"}}
+	if !reflect.DeepEqual(created.NetworkPolicy, want) {
+		t.Fatalf("created NetworkPolicy = %#v, want %#v", created.NetworkPolicy, want)
+	}
+	if !reflect.DeepEqual(fake.lastCreate.NetworkPolicy, want) {
+		t.Fatalf("CreateOptions NetworkPolicy = %#v, want %#v", fake.lastCreate.NetworkPolicy, want)
+	}
+	if !reflect.DeepEqual(fake.lastNetworkPolicy, want) {
+		t.Fatalf("applied NetworkPolicy = %#v, want %#v", fake.lastNetworkPolicy, want)
+	}
+}
+
+func TestSessionCreateClearsEnvironmentNetworkPolicyWithEmptyOverride(t *testing.T) {
+	t.Parallel()
+
+	services, cleanup, fake := newTestServices(t)
+	defer cleanup()
+
+	if _, err := services.environments.Upsert(context.Background(), api.UpsertEnvironmentRequest{
+		Name:            "shell",
+		ImageRepository: "busybox",
+		ImageTag:        "latest",
+		Enabled:         true,
+		NetworkPolicy:   &model.NetworkPolicy{Blacklist: []string{"8.8.8.8"}},
+	}); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	created, err := services.sessions.Create(context.Background(), api.CreateSessionRequest{
+		SessionID:       "network-clear",
+		EnvironmentName: "shell",
+		NetworkPolicy:   &model.NetworkPolicy{},
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if created.NetworkPolicy != nil {
+		t.Fatalf("created NetworkPolicy = %#v, want nil", created.NetworkPolicy)
+	}
+	if fake.lastCreate.NetworkPolicy != nil {
+		t.Fatalf("CreateOptions NetworkPolicy = %#v, want nil", fake.lastCreate.NetworkPolicy)
+	}
+	if fake.applyNetworkPolicyCalls != 0 {
+		t.Fatalf("ApplyNetworkPolicy calls = %d, want 0", fake.applyNetworkPolicyCalls)
+	}
+}
+
+func TestSessionCreateOverridesEnvironmentNetworkPolicy(t *testing.T) {
+	t.Parallel()
+
+	services, cleanup, fake := newTestServices(t)
+	defer cleanup()
+
+	if _, err := services.environments.Upsert(context.Background(), api.UpsertEnvironmentRequest{
+		Name:            "shell",
+		ImageRepository: "busybox",
+		ImageTag:        "latest",
+		Enabled:         true,
+		NetworkPolicy:   &model.NetworkPolicy{Blacklist: []string{"8.8.8.8"}},
+	}); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	override := &model.NetworkPolicy{Whitelist: []string{"192.168.0.0/16"}}
+	created, err := services.sessions.Create(context.Background(), api.CreateSessionRequest{
+		SessionID:       "network-override",
+		EnvironmentName: "shell",
+		NetworkPolicy:   override,
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if !reflect.DeepEqual(created.NetworkPolicy, override) {
+		t.Fatalf("created NetworkPolicy = %#v, want %#v", created.NetworkPolicy, override)
+	}
+	if !reflect.DeepEqual(fake.lastNetworkPolicy, override) {
+		t.Fatalf("applied NetworkPolicy = %#v, want %#v", fake.lastNetworkPolicy, override)
+	}
+}
+
+func TestSessionCreateRollsBackWhenNetworkPolicyApplyFails(t *testing.T) {
+	t.Parallel()
+
+	services, cleanup, fake := newTestServices(t)
+	defer cleanup()
+	fake.applyNetworkPolicyErr = errors.New("iptables missing")
+
+	if _, err := services.environments.Upsert(context.Background(), api.UpsertEnvironmentRequest{
+		Name:            "shell",
+		ImageRepository: "busybox",
+		ImageTag:        "latest",
+		Enabled:         true,
+	}); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	_, err := services.sessions.Create(context.Background(), api.CreateSessionRequest{
+		SessionID:       "network-rollback",
+		EnvironmentName: "shell",
+		NetworkPolicy:   &model.NetworkPolicy{Blacklist: []string{"8.8.8.8"}},
+	})
+	if err == nil {
+		t.Fatal("Create() error = nil, want network policy failure")
+	}
+	if len(fake.containers) != 0 {
+		t.Fatalf("containers = %#v, want rollback removal", fake.containers)
+	}
+	if _, statErr := os.Stat(filepath.Join(services.sessions.cfg.RootfsRoot, "network-rollback")); !os.IsNotExist(statErr) {
+		t.Fatalf("rootfs stat error = %v, want not exist", statErr)
+	}
+}
+
+func TestSessionCreateFailsWhenRuntimeDoesNotSupportNetworkPolicy(t *testing.T) {
+	t.Parallel()
+
+	services, cleanup, fake := newTestServices(t)
+	defer cleanup()
+	services.sessions.svc.runtime = noNetworkPolicyRuntime{inner: fake}
+
+	if _, err := services.environments.Upsert(context.Background(), api.UpsertEnvironmentRequest{
+		Name:            "shell",
+		ImageRepository: "busybox",
+		ImageTag:        "latest",
+		Enabled:         true,
+	}); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	_, err := services.sessions.Create(context.Background(), api.CreateSessionRequest{
+		SessionID:       "network-unsupported",
+		EnvironmentName: "shell",
+		NetworkPolicy:   &model.NetworkPolicy{Blacklist: []string{"8.8.8.8"}},
+	})
+	if err == nil {
+		t.Fatal("Create() error = nil, want unsupported runtime failure")
+	}
+	if len(fake.containers) != 0 {
+		t.Fatalf("containers = %#v, want rollback removal", fake.containers)
+	}
+}
+
 func TestCreateUsesRequestCwdOverride(t *testing.T) {
 	t.Parallel()
 
@@ -2816,6 +2980,7 @@ func (s *testSessionService) Create(ctx context.Context, req api.CreateSessionRe
 		Env:             model.CloneMap(req.Env),
 		Labels:          model.CloneMap(req.Labels),
 		Mounts:          append([]model.Mount(nil), req.Mounts...),
+		NetworkPolicy:   req.NetworkPolicy.Clone(),
 	})
 	if err != nil {
 		return nil, err
@@ -2940,6 +3105,7 @@ func (s *testEnvironmentService) Upsert(ctx context.Context, req api.UpsertEnvir
 		AgentPrompt:     req.AgentPrompt,
 		Mounts:          append([]model.Mount(nil), req.Mounts...),
 		Resources:       req.Resources,
+		NetworkPolicy:   req.NetworkPolicy.Clone(),
 		Enabled:         req.Enabled,
 		DefaultExecute:  req.DefaultExecute.Clone(),
 		Build:           req.Build.Clone(),
@@ -3093,6 +3259,7 @@ func testSessionViewToAPI(view *model.SessionView) *api.SessionResponse {
 		Labels:          model.CloneMap(view.Labels),
 		Resources:       view.Resources,
 		Mounts:          append([]model.Mount(nil), view.Mounts...),
+		NetworkPolicy:   view.NetworkPolicy.Clone(),
 		CreatedAt:       view.CreatedAt,
 		Status:          string(view.Status),
 		StoppedAt:       view.StoppedAt,
@@ -3115,6 +3282,7 @@ func testEnvironmentViewToAPI(view *model.EnvironmentView) *api.EnvironmentRespo
 		AgentPrompt:           view.AgentPrompt,
 		Mounts:                append([]model.Mount(nil), view.Mounts...),
 		Resources:             view.Resources,
+		NetworkPolicy:         view.NetworkPolicy.Clone(),
 		Enabled:               view.Enabled,
 		DefaultExecute:        view.DefaultExecute.Clone(),
 		Build:                 view.Build.Clone(),
@@ -3169,30 +3337,77 @@ func testBuildJobToAPI(job *model.BuildJob) *api.BuildJobResponse {
 }
 
 type fakeRuntime struct {
-	mu                   sync.Mutex
-	name                 string
-	containers           map[string]runtime.ContainerInfo
-	images               map[string]runtime.ImageInfo
-	imageMetadata        map[string]runtime.ImageMetadata
-	allowUnknownImages   bool
-	createErr            error
-	execResult           runtime.ExecResult
-	execErr              error
-	startErr             error
-	stopErr              error
-	removeErr            error
-	inspectErr           error
-	inspectImageErr      error
-	listImageMetadataErr error
-	lastCreate           runtime.CreateOptions
-	lastExec             runtime.ExecOptions
-	startCalls           int
-	lastBuild            runtime.BuildOptions
-	buildResult          runtime.BuildResult
-	buildFiles           map[string]string
-	buildErr             error
-	buildStarted         chan struct{}
-	buildContinue        chan struct{}
+	mu                      sync.Mutex
+	name                    string
+	containers              map[string]runtime.ContainerInfo
+	images                  map[string]runtime.ImageInfo
+	imageMetadata           map[string]runtime.ImageMetadata
+	allowUnknownImages      bool
+	createErr               error
+	execResult              runtime.ExecResult
+	execErr                 error
+	startErr                error
+	stopErr                 error
+	removeErr               error
+	inspectErr              error
+	inspectImageErr         error
+	listImageMetadataErr    error
+	applyNetworkPolicyErr   error
+	lastCreate              runtime.CreateOptions
+	lastExec                runtime.ExecOptions
+	lastNetworkPolicy       *model.NetworkPolicy
+	applyNetworkPolicyCalls int
+	startCalls              int
+	lastBuild               runtime.BuildOptions
+	buildResult             runtime.BuildResult
+	buildFiles              map[string]string
+	buildErr                error
+	buildStarted            chan struct{}
+	buildContinue           chan struct{}
+}
+
+type noNetworkPolicyRuntime struct {
+	inner *fakeRuntime
+}
+
+func (r noNetworkPolicyRuntime) Name() string {
+	return r.inner.Name()
+}
+
+func (r noNetworkPolicyRuntime) Create(ctx context.Context, opts runtime.CreateOptions) (runtime.ContainerInfo, error) {
+	return r.inner.Create(ctx, opts)
+}
+
+func (r noNetworkPolicyRuntime) Start(ctx context.Context, containerID string) (runtime.ContainerInfo, error) {
+	return r.inner.Start(ctx, containerID)
+}
+
+func (r noNetworkPolicyRuntime) Exec(ctx context.Context, containerID string, opts runtime.ExecOptions) (runtime.ExecResult, error) {
+	return r.inner.Exec(ctx, containerID, opts)
+}
+
+func (r noNetworkPolicyRuntime) Build(ctx context.Context, opts runtime.BuildOptions) (runtime.BuildResult, error) {
+	return r.inner.Build(ctx, opts)
+}
+
+func (r noNetworkPolicyRuntime) Stop(ctx context.Context, containerID string, timeout time.Duration) error {
+	return r.inner.Stop(ctx, containerID, timeout)
+}
+
+func (r noNetworkPolicyRuntime) Remove(ctx context.Context, containerID string) error {
+	return r.inner.Remove(ctx, containerID)
+}
+
+func (r noNetworkPolicyRuntime) Inspect(ctx context.Context, containerID string) (runtime.ContainerInfo, error) {
+	return r.inner.Inspect(ctx, containerID)
+}
+
+func (r noNetworkPolicyRuntime) InspectImage(ctx context.Context, imageRef string) (runtime.ImageInfo, error) {
+	return r.inner.InspectImage(ctx, imageRef)
+}
+
+func (r noNetworkPolicyRuntime) ListByLabel(ctx context.Context, key, value string) ([]runtime.ContainerInfo, error) {
+	return r.inner.ListByLabel(ctx, key, value)
 }
 
 func (f *fakeRuntime) Name() string {
@@ -3236,6 +3451,20 @@ func (f *fakeRuntime) Start(_ context.Context, containerID string) (runtime.Cont
 	f.containers[info.ID] = info
 	f.startCalls++
 	return info, nil
+}
+
+func (f *fakeRuntime) ApplyNetworkPolicy(_ context.Context, containerID string, policy *model.NetworkPolicy) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.applyNetworkPolicyCalls++
+	if f.applyNetworkPolicyErr != nil {
+		return f.applyNetworkPolicyErr
+	}
+	if _, ok := f.lookup(containerID); !ok {
+		return runtime.ErrContainerNotFound
+	}
+	f.lastNetworkPolicy = policy.Clone()
+	return nil
 }
 
 func (f *fakeRuntime) Exec(ctx context.Context, containerID string, opts runtime.ExecOptions) (runtime.ExecResult, error) {

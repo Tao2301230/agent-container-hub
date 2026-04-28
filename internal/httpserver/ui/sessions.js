@@ -40,6 +40,9 @@ const state = {
     templateMounts: [],
     selectedTemplateMount: "",
     mounts: [],
+    networkPolicyMode: "inherit",
+    networkPolicyWhitelist: "",
+    networkPolicyBlacklist: "",
   },
   quickExecute: {
     sessionID: "",
@@ -61,6 +64,11 @@ const createSessionButton = document.getElementById("create-session");
 const createSessionMounts = document.getElementById("create-session-mounts");
 const templateMountSelect = document.getElementById("template-mount-select");
 const addTemplateMountButton = document.getElementById("add-template-mount");
+const createNetworkPolicyMode = document.getElementById("create-network-policy-mode");
+const createNetworkPolicyHint = document.getElementById("create-network-policy-hint");
+const createNetworkPolicyCustom = document.getElementById("create-network-policy-custom");
+const createNetworkPolicyWhitelist = document.getElementById("create-network-policy-whitelist");
+const createNetworkPolicyBlacklist = document.getElementById("create-network-policy-blacklist");
 const refreshSessionsButton = document.getElementById("refresh-sessions");
 const executionHistory = document.getElementById("execution-history");
 const executionDetail = document.getElementById("execution-detail");
@@ -183,6 +191,43 @@ function cloneMount(mount, origin = "manual") {
   };
 }
 
+function normalizeNetworkPolicy(policy) {
+  if (!policy) {
+    return null;
+  }
+  const normalized = {
+    whitelist: Array.isArray(policy.whitelist) ? policy.whitelist.map((item) => String(item || "").trim()).filter(Boolean) : [],
+    blacklist: Array.isArray(policy.blacklist) ? policy.blacklist.map((item) => String(item || "").trim()).filter(Boolean) : [],
+  };
+  return normalized.whitelist.length > 0 || normalized.blacklist.length > 0 ? normalized : null;
+}
+
+function textToNetworkPolicyEntries(value) {
+  return String(value || "")
+    .split("\n")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function collectCustomNetworkPolicy() {
+  return {
+    whitelist: textToNetworkPolicyEntries(createNetworkPolicyWhitelist.value),
+    blacklist: textToNetworkPolicyEntries(createNetworkPolicyBlacklist.value),
+  };
+}
+
+function networkPolicySummary(policy) {
+  const normalized = normalizeNetworkPolicy(policy);
+  if (!normalized) {
+    return "No network policy";
+  }
+  return `${normalized.whitelist.length} whitelist · ${normalized.blacklist.length} blacklist`;
+}
+
+function selectedCreateEnvironment() {
+  return state.createSession.environments.find((item) => item.name === state.createSession.selectedEnvironment) || null;
+}
+
 function templateMountKey(mount) {
   return `${mount?.source || ""}::${mount?.destination || ""}`;
 }
@@ -271,6 +316,24 @@ function createEnvironmentHintText(selectedEnvironment) {
   return `${selectedEnvironment.name} cannot create sessions because ${selectedEnvironment.image_ref || "its image"} is missing locally.`;
 }
 
+function renderCreateNetworkPolicyControls() {
+  const mode = state.createSession.networkPolicyMode;
+  createNetworkPolicyMode.value = mode;
+  createNetworkPolicyCustom.classList.toggle("hidden", mode !== "custom");
+  const environment = selectedCreateEnvironment();
+  if (mode === "clear") {
+    createNetworkPolicyHint.textContent = "This session will not use the environment default policy.";
+    return;
+  }
+  if (mode === "custom") {
+    createNetworkPolicyHint.textContent = "This session will use the custom policy below.";
+    return;
+  }
+  createNetworkPolicyHint.textContent = environment
+    ? `Inherits: ${networkPolicySummary(environment.network_policy)}.`
+    : "Inherit the selected environment policy.";
+}
+
 function renderSessionActionButton({
   action,
   label,
@@ -355,6 +418,7 @@ function renderCreateEnvironmentOptions(preferredName = "") {
     createSessionButton.disabled = true;
     createEnvironmentHint.textContent = createEnvironmentHintText(null);
     state.createSession.selectedEnvironment = "";
+    renderCreateNetworkPolicyControls();
     return;
   }
 
@@ -370,6 +434,7 @@ function renderCreateEnvironmentOptions(preferredName = "") {
     environments.find((item) => item.name === selectedName) || null,
   );
   state.createSession.selectedEnvironment = selectedName;
+  renderCreateNetworkPolicyControls();
 }
 
 function resetCreateSessionForm() {
@@ -378,7 +443,13 @@ function resetCreateSessionForm() {
     ? templateMountKey(state.createSession.templateMounts[0])
     : "";
   state.createSession.mounts = [];
+  state.createSession.networkPolicyMode = "inherit";
+  state.createSession.networkPolicyWhitelist = "";
+  state.createSession.networkPolicyBlacklist = "";
   createEnvironmentSelect.value = state.createSession.selectedEnvironment || "";
+  createNetworkPolicyWhitelist.value = "";
+  createNetworkPolicyBlacklist.value = "";
+  renderCreateNetworkPolicyControls();
   document.getElementById("create-session-id").value = "";
   document.getElementById("create-session-cwd").value = "";
   renderSessionMountEditor();
@@ -472,6 +543,18 @@ function collectCreateMountPayload() {
     destination: mount.destination.trim(),
     read_only: Boolean(mount.read_only),
   }));
+}
+
+function applyCreateNetworkPolicyPayload(payload) {
+  const mode = state.createSession.networkPolicyMode;
+  if (mode === "clear") {
+    payload.network_policy = {};
+    return payload;
+  }
+  if (mode === "custom") {
+    payload.network_policy = collectCustomNetworkPolicy();
+  }
+  return payload;
 }
 
 function renderSessionTable() {
@@ -643,6 +726,14 @@ function renderSessionDetail() {
         <h3>Resources</h3>
       </div>
       <pre>${escapeHTML(JSON.stringify(item.resources || {}, null, 2))}</pre>
+    </div>
+
+    <div class="stack">
+      <div>
+        <h3>Network Policy</h3>
+        <div class="meta">${escapeHTML(networkPolicySummary(item.network_policy))}</div>
+      </div>
+      <pre>${escapeHTML(JSON.stringify(item.network_policy || {}, null, 2))}</pre>
     </div>
   `;
 
@@ -962,6 +1053,19 @@ async function initialize() {
     renderCreateEnvironmentOptions(createEnvironmentSelect.value);
   });
 
+  createNetworkPolicyMode.addEventListener("change", () => {
+    state.createSession.networkPolicyMode = createNetworkPolicyMode.value;
+    renderCreateNetworkPolicyControls();
+  });
+
+  createNetworkPolicyWhitelist.addEventListener("input", () => {
+    state.createSession.networkPolicyWhitelist = createNetworkPolicyWhitelist.value;
+  });
+
+  createNetworkPolicyBlacklist.addEventListener("input", () => {
+    state.createSession.networkPolicyBlacklist = createNetworkPolicyBlacklist.value;
+  });
+
   document.getElementById("add-mount-row").addEventListener("click", (event) => {
     event.preventDefault();
     addMountRow();
@@ -1052,12 +1156,12 @@ async function initialize() {
     try {
       const result = await api("/api/sessions/create", {
         method: "POST",
-        body: JSON.stringify({
+        body: JSON.stringify(applyCreateNetworkPolicyPayload({
           environment_name: environmentName,
           session_id: document.getElementById("create-session-id").value.trim(),
           cwd: document.getElementById("create-session-cwd").value.trim(),
           mounts: collectCreateMountPayload(),
-        }),
+        })),
       });
       state.sessions.selectedID = result.session_id;
       state.createSession.selectedEnvironment = result.environment_name;

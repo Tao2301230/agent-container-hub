@@ -117,6 +117,7 @@ func sessionToView(session *model.Session) *model.SessionView {
 		Labels:          model.CloneMap(session.Labels),
 		Resources:       session.Resources,
 		Mounts:          append([]model.Mount(nil), session.Mounts...),
+		NetworkPolicy:   session.NetworkPolicy.Clone(),
 		CreatedAt:       session.CreatedAt,
 		Status:          session.Status,
 		StoppedAt:       session.StoppedAt,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -23,6 +24,7 @@ func TestFileEnvironmentStoreSaveAndGet(t *testing.T) {
 		DefaultCwd:      "/workspace",
 		DefaultEnv:      map[string]string{"FOO": "bar"},
 		AgentPrompt:     "Use /workspace for project files.\nCheck bundled tools before installing anything.\n",
+		NetworkPolicy:   &model.NetworkPolicy{Whitelist: []string{"10.0.0.0/8"}, Blacklist: []string{"8.8.8.8"}},
 		Enabled:         true,
 		Build: model.BuildSpec{
 			Dockerfile:    "FROM busybox:latest\n",
@@ -48,6 +50,9 @@ func TestFileEnvironmentStoreSaveAndGet(t *testing.T) {
 	if strings.Contains(text, "dockerfile:") {
 		t.Fatalf("metadata unexpectedly contains dockerfile: %q", text)
 	}
+	if !strings.Contains(text, "network_policy:") || !strings.Contains(text, "10.0.0.0/8") || !strings.Contains(text, "8.8.8.8") {
+		t.Fatalf("file content = %q, want network_policy", text)
+	}
 
 	dockerfile, err := os.ReadFile(filepath.Join(root, "shell", environmentDockerfile))
 	if err != nil {
@@ -72,6 +77,9 @@ func TestFileEnvironmentStoreSaveAndGet(t *testing.T) {
 	}
 	if stored.AgentPrompt != environment.AgentPrompt {
 		t.Fatalf("GetEnvironment().AgentPrompt = %q, want %q", stored.AgentPrompt, environment.AgentPrompt)
+	}
+	if !reflect.DeepEqual(stored.NetworkPolicy, environment.NetworkPolicy) {
+		t.Fatalf("GetEnvironment().NetworkPolicy = %#v, want %#v", stored.NetworkPolicy, environment.NetworkPolicy)
 	}
 	if stored.CreatedAt.IsZero() || stored.UpdatedAt.IsZero() {
 		t.Fatalf("mtime-derived timestamps not populated: %+v", stored)

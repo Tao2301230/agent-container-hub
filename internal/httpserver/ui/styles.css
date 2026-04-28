@@ -481,6 +481,10 @@ label {
   border: 0;
 }
 
+.hidden {
+  display: none !important;
+}
+
 .icon-button {
   width: 38px;
   height: 38px;

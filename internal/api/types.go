@@ -7,12 +7,13 @@ import (
 )
 
 type CreateSessionRequest struct {
-	SessionID       string            `json:"session_id"`
-	EnvironmentName string            `json:"environment_name"`
-	Cwd             string            `json:"cwd"`
-	Env             map[string]string `json:"env,omitempty"`
-	Labels          map[string]string `json:"labels"`
-	Mounts          []model.Mount     `json:"mounts"`
+	SessionID       string               `json:"session_id"`
+	EnvironmentName string               `json:"environment_name"`
+	Cwd             string               `json:"cwd"`
+	Env             map[string]string    `json:"env,omitempty"`
+	Labels          map[string]string    `json:"labels"`
+	Mounts          []model.Mount        `json:"mounts"`
+	NetworkPolicy   *model.NetworkPolicy `json:"network_policy,omitempty"`
 }
 
 type ExecuteSessionRequest struct {
@@ -91,33 +92,35 @@ type StopSessionResponse struct {
 }
 
 type SessionResponse struct {
-	SessionID       string             `json:"session_id"`
-	EnvironmentName string             `json:"environment_name"`
-	ContainerID     string             `json:"container_id,omitempty"`
-	Image           string             `json:"image"`
-	DefaultCwd      string             `json:"cwd"`
-	RootfsPath      string             `json:"rootfs_path"`
-	Labels          map[string]string  `json:"labels,omitempty"`
-	Resources       model.ResourceSpec `json:"resources"`
-	Mounts          []model.Mount      `json:"mounts,omitempty"`
-	CreatedAt       time.Time          `json:"created_at"`
-	Status          string             `json:"status,omitempty"`
-	StoppedAt       time.Time          `json:"stopped_at,omitempty"`
+	SessionID       string               `json:"session_id"`
+	EnvironmentName string               `json:"environment_name"`
+	ContainerID     string               `json:"container_id,omitempty"`
+	Image           string               `json:"image"`
+	DefaultCwd      string               `json:"cwd"`
+	RootfsPath      string               `json:"rootfs_path"`
+	Labels          map[string]string    `json:"labels,omitempty"`
+	Resources       model.ResourceSpec   `json:"resources"`
+	Mounts          []model.Mount        `json:"mounts,omitempty"`
+	NetworkPolicy   *model.NetworkPolicy `json:"network_policy,omitempty"`
+	CreatedAt       time.Time            `json:"created_at"`
+	Status          string               `json:"status,omitempty"`
+	StoppedAt       time.Time            `json:"stopped_at,omitempty"`
 }
 
 type UpsertEnvironmentRequest struct {
-	Name            string              `json:"name"`
-	Description     string              `json:"description"`
-	ImageRepository string              `json:"image_repository"`
-	ImageTag        string              `json:"image_tag"`
-	DefaultCwd      string              `json:"default_cwd"`
-	DefaultEnv      map[string]string   `json:"default_env"`
-	AgentPrompt     string              `json:"agent_prompt"`
-	Mounts          []model.Mount       `json:"mounts"`
-	Resources       model.ResourceSpec  `json:"resources"`
-	Enabled         bool                `json:"enabled"`
-	DefaultExecute  model.ExecutePreset `json:"default_execute"`
-	Build           model.BuildSpec     `json:"build"`
+	Name            string               `json:"name"`
+	Description     string               `json:"description"`
+	ImageRepository string               `json:"image_repository"`
+	ImageTag        string               `json:"image_tag"`
+	DefaultCwd      string               `json:"default_cwd"`
+	DefaultEnv      map[string]string    `json:"default_env"`
+	AgentPrompt     string               `json:"agent_prompt"`
+	Mounts          []model.Mount        `json:"mounts"`
+	Resources       model.ResourceSpec   `json:"resources"`
+	NetworkPolicy   *model.NetworkPolicy `json:"network_policy,omitempty"`
+	Enabled         bool                 `json:"enabled"`
+	DefaultExecute  model.ExecutePreset  `json:"default_execute"`
+	Build           model.BuildSpec      `json:"build"`
 }
 
 type ImageMetadataResponse struct {
@@ -138,6 +141,7 @@ type EnvironmentResponse struct {
 	AgentPrompt           string                 `json:"agent_prompt,omitempty"`
 	Mounts                []model.Mount          `json:"mounts,omitempty"`
 	Resources             model.ResourceSpec     `json:"resources"`
+	NetworkPolicy         *model.NetworkPolicy   `json:"network_policy,omitempty"`
 	Enabled               bool                   `json:"enabled"`
 	DefaultExecute        model.ExecutePreset    `json:"default_execute,omitempty"`
 	Build                 model.BuildSpec        `json:"build"`

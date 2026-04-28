@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"agent-container-hub/internal/model"
 )
 
 func TestParseContainerState(t *testing.T) {
@@ -94,6 +96,31 @@ func TestCLIProviderCreateDoesNotInspect(t *testing.T) {
 	}
 	if !strings.Contains(logText, "--label sandbox.managed_by=agent-container-hub") {
 		t.Fatalf("Create() log = %q, want managed_by label", logText)
+	}
+}
+
+func TestCLIProviderCreateAddsNetAdminForNetworkPolicy(t *testing.T) {
+	t.Parallel()
+
+	binary, logPath := writeFakeRuntimeBinary(t)
+	provider := &CLIProvider{binary: binary}
+
+	_, err := provider.Create(context.Background(), CreateOptions{
+		Name:  "demo",
+		Image: "busybox:latest",
+		NetworkPolicy: &model.NetworkPolicy{
+			Blacklist: []string{"8.8.8.8"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	logData, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if !strings.Contains(string(logData), "--cap-add=NET_ADMIN") {
+		t.Fatalf("Create() log = %q, want NET_ADMIN capability", string(logData))
 	}
 }
 

@@ -131,6 +131,9 @@ func (p *CLIProvider) Create(ctx context.Context, opts CreateOptions) (Container
 	if opts.Resources.PIDs > 0 {
 		args = append(args, "--pids-limit", strconv.Itoa(opts.Resources.PIDs))
 	}
+	if !opts.NetworkPolicy.IsEmpty() {
+		args = append(args, "--cap-add=NET_ADMIN")
+	}
 	for key, value := range opts.Env {
 		args = append(args, "--env", fmt.Sprintf("%s=%s", key, value))
 	}

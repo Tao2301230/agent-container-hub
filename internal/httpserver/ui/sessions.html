@@ -201,6 +201,42 @@
 						</div>
 
 						<div class="stack">
+							<div>
+								<h3>Network Policy</h3>
+								<div class="meta" id="create-network-policy-hint">
+									Inherit the selected environment policy.
+								</div>
+							</div>
+							<label
+								>Policy Mode
+								<select id="create-network-policy-mode">
+									<option value="inherit">Inherit environment default</option>
+									<option value="clear">Clear for this session</option>
+									<option value="custom">Custom policy</option>
+								</select>
+							</label>
+							<div
+								class="row network-policy-custom hidden"
+								id="create-network-policy-custom"
+							>
+								<label
+									>Whitelist
+									<textarea
+										id="create-network-policy-whitelist"
+										placeholder="10.0.0.0/8"
+									></textarea>
+								</label>
+								<label
+									>Blacklist
+									<textarea
+										id="create-network-policy-blacklist"
+										placeholder="8.8.8.8"
+									></textarea>
+								</label>
+							</div>
+						</div>
+
+						<div class="stack">
 							<div class="toolbar wrap">
 								<div>
 									<h3>Session Mounts</h3>

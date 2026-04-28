@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -170,6 +171,35 @@ func TestQuerySessionsAndExecutions(t *testing.T) {
 	}
 }
 
+func TestSaveSessionRoundTripsNetworkPolicy(t *testing.T) {
+	t.Parallel()
+
+	st, cleanup := newSQLiteStore(t)
+	defer cleanup()
+
+	want := &model.NetworkPolicy{Whitelist: []string{"10.0.0.0/8"}, Blacklist: []string{"8.8.8.8"}}
+	session := &model.Session{
+		ID:              "network-policy-session",
+		EnvironmentName: "shell",
+		Image:           "busybox:latest",
+		DefaultCwd:      "/workspace",
+		RootfsPath:      "/tmp/session",
+		NetworkPolicy:   want,
+		Status:          model.SessionStatusActive,
+		CreatedAt:       time.Now().UTC(),
+	}
+	if err := st.SaveSession(context.Background(), session); err != nil {
+		t.Fatalf("SaveSession() error = %v", err)
+	}
+	got, err := st.GetSession(context.Background(), session.ID)
+	if err != nil {
+		t.Fatalf("GetSession() error = %v", err)
+	}
+	if !reflect.DeepEqual(got.NetworkPolicy, want) {
+		t.Fatalf("NetworkPolicy = %#v, want %#v", got.NetworkPolicy, want)
+	}
+}
+
 func TestListSessionsReturnsAllActivePages(t *testing.T) {
 	t.Parallel()
 
@@ -275,6 +305,57 @@ func TestOpenMigratesBuildJobTargetColumn(t *testing.T) {
 	}
 	if job.Target != "" {
 		t.Fatalf("job.Target = %q, want empty string for migrated legacy row", job.Target)
+	}
+}
+
+func TestOpenMigratesSessionNetworkPolicyColumn(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "state.db")
+	legacyDB, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("sql.Open() error = %v", err)
+	}
+	t.Cleanup(func() { _ = legacyDB.Close() })
+
+	if _, err := legacyDB.Exec(`
+		CREATE TABLE sessions (
+			session_id TEXT PRIMARY KEY,
+			container_id TEXT NOT NULL DEFAULT '',
+			environment_name TEXT NOT NULL,
+			image TEXT NOT NULL,
+			default_cwd TEXT NOT NULL,
+			rootfs_path TEXT NOT NULL,
+			env_json TEXT NOT NULL DEFAULT '{}',
+			mounts_json TEXT NOT NULL DEFAULT '[]',
+			resources_json TEXT NOT NULL DEFAULT '{}',
+			labels_json TEXT NOT NULL DEFAULT '{}',
+			status TEXT NOT NULL,
+			created_at TEXT NOT NULL,
+			stopped_at TEXT
+		);
+		INSERT INTO sessions (
+			session_id, environment_name, image, default_cwd, rootfs_path, status, created_at
+		) VALUES (
+			'legacy-session', 'shell', 'busybox:latest', '/workspace', '/tmp/rootfs', 'active', '2026-03-18T10:00:00Z'
+		);
+	`); err != nil {
+		t.Fatalf("Exec(legacy sessions) error = %v", err)
+	}
+	_ = legacyDB.Close()
+
+	st, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = st.Close() }()
+
+	session, err := st.GetSession(context.Background(), "legacy-session")
+	if err != nil {
+		t.Fatalf("GetSession() error = %v", err)
+	}
+	if session.NetworkPolicy != nil {
+		t.Fatalf("NetworkPolicy = %#v, want nil default after migration", session.NetworkPolicy)
 	}
 }
 

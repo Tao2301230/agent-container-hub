@@ -57,13 +57,14 @@ type ImageMetadata struct {
 }
 
 type CreateOptions struct {
-	Name      string
-	Image     string
-	Cwd       string
-	Env       map[string]string
-	Mounts    []model.Mount
-	Resources model.ResourceSpec
-	Labels    map[string]string
+	Name          string
+	Image         string
+	Cwd           string
+	Env           map[string]string
+	Mounts        []model.Mount
+	Resources     model.ResourceSpec
+	NetworkPolicy *model.NetworkPolicy
+	Labels        map[string]string
 }
 
 type ExecOptions struct {

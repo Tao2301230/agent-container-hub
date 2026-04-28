@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"net"
 	"regexp"
 	"strings"
 	"time"
@@ -32,6 +33,62 @@ type ResourceSpec struct {
 	PIDs     int     `json:"pids" yaml:"pids"`
 }
 
+type NetworkPolicy struct {
+	Whitelist []string `json:"whitelist,omitempty" yaml:"whitelist,omitempty"`
+	Blacklist []string `json:"blacklist,omitempty" yaml:"blacklist,omitempty"`
+}
+
+func (p *NetworkPolicy) Clone() *NetworkPolicy {
+	if p == nil {
+		return nil
+	}
+	return &NetworkPolicy{
+		Whitelist: append([]string(nil), p.Whitelist...),
+		Blacklist: append([]string(nil), p.Blacklist...),
+	}
+}
+
+func (p *NetworkPolicy) IsEmpty() bool {
+	if p == nil {
+		return true
+	}
+	return len(p.Whitelist) == 0 && len(p.Blacklist) == 0
+}
+
+func ValidateNetworkPolicy(policy *NetworkPolicy) error {
+	if policy == nil {
+		return nil
+	}
+	for _, entry := range policy.Whitelist {
+		if err := validateIPOrCIDR(entry); err != nil {
+			return fmt.Errorf("network_policy whitelist entry %q is invalid: %w", entry, err)
+		}
+	}
+	for _, entry := range policy.Blacklist {
+		if err := validateIPOrCIDR(entry); err != nil {
+			return fmt.Errorf("network_policy blacklist entry %q is invalid: %w", entry, err)
+		}
+	}
+	return nil
+}
+
+func validateIPOrCIDR(value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fmt.Errorf("entry must not be empty")
+	}
+	if strings.Contains(value, "/") {
+		if _, _, err := net.ParseCIDR(value); err != nil {
+			return err
+		}
+		return nil
+	}
+	if ip := net.ParseIP(value); ip == nil {
+		return fmt.Errorf("entry must be an IP address or CIDR")
+	}
+	return nil
+}
+
 type BuildSpec struct {
 	Dockerfile    string            `json:"dockerfile,omitempty" yaml:"dockerfile,omitempty"`
 	BuildArgs     map[string]string `json:"build_args,omitempty" yaml:"build_args,omitempty"`
@@ -58,6 +115,7 @@ type Environment struct {
 	AgentPrompt     string            `json:"agent_prompt,omitempty" yaml:"agent_prompt,omitempty"`
 	Mounts          []Mount           `json:"mounts,omitempty" yaml:"mounts,omitempty"`
 	Resources       ResourceSpec      `json:"resources" yaml:"resources"`
+	NetworkPolicy   *NetworkPolicy    `json:"network_policy,omitempty" yaml:"network_policy,omitempty"`
 	Enabled         bool              `json:"enabled" yaml:"enabled"`
 	DefaultExecute  ExecutePreset     `json:"default_execute,omitempty" yaml:"default_execute,omitempty"`
 	Build           BuildSpec         `json:"build" yaml:"build"`
@@ -72,6 +130,7 @@ func (e *Environment) Clone() *Environment {
 	cp := *e
 	cp.DefaultEnv = CloneMap(e.DefaultEnv)
 	cp.Mounts = append([]Mount(nil), e.Mounts...)
+	cp.NetworkPolicy = e.NetworkPolicy.Clone()
 	cp.DefaultExecute = e.DefaultExecute.Clone()
 	cp.Build = e.Build.Clone()
 	return &cp
@@ -152,6 +211,7 @@ type Session struct {
 	Env             map[string]string `json:"env,omitempty"`
 	Mounts          []Mount           `json:"mounts,omitempty"`
 	Resources       ResourceSpec      `json:"resources"`
+	NetworkPolicy   *NetworkPolicy    `json:"network_policy,omitempty"`
 	Labels          map[string]string `json:"labels,omitempty"`
 	Status          SessionStatus     `json:"status"`
 	CreatedAt       time.Time         `json:"created_at"`
@@ -166,6 +226,7 @@ func (s *Session) Clone() *Session {
 	cp.Env = CloneMap(s.Env)
 	cp.Labels = CloneMap(s.Labels)
 	cp.Mounts = append([]Mount(nil), s.Mounts...)
+	cp.NetworkPolicy = s.NetworkPolicy.Clone()
 	return &cp
 }
 

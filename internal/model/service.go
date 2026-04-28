@@ -9,6 +9,7 @@ type CreateSessionRequest struct {
 	Env             map[string]string
 	Labels          map[string]string
 	Mounts          []Mount
+	NetworkPolicy   *NetworkPolicy
 }
 
 type ExecuteSessionRequest struct {
@@ -32,6 +33,7 @@ type UpsertEnvironmentRequest struct {
 	AgentPrompt     string
 	Mounts          []Mount
 	Resources       ResourceSpec
+	NetworkPolicy   *NetworkPolicy
 	Enabled         bool
 	DefaultExecute  ExecutePreset
 	Build           BuildSpec
@@ -47,6 +49,7 @@ type SessionView struct {
 	Labels          map[string]string
 	Resources       ResourceSpec
 	Mounts          []Mount
+	NetworkPolicy   *NetworkPolicy
 	CreatedAt       time.Time
 	Status          SessionStatus
 	StoppedAt       time.Time
@@ -116,6 +119,7 @@ type EnvironmentView struct {
 	AgentPrompt           string
 	Mounts                []Mount
 	Resources             ResourceSpec
+	NetworkPolicy         *NetworkPolicy
 	Enabled               bool
 	DefaultExecute        ExecutePreset
 	Build                 BuildSpec

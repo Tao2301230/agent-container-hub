@@ -61,6 +61,9 @@ func (s *EnvironmentService) Upsert(ctx context.Context, req model.UpsertEnviron
 	if err := model.ValidateEnvMap(req.Build.BuildArgs, "build.build_args"); err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrValidation, err)
 	}
+	if err := model.ValidateNetworkPolicy(req.NetworkPolicy); err != nil {
+		return nil, fmt.Errorf("%w: %s", ErrValidation, err)
+	}
 
 	environment := &model.Environment{
 		Name:            name,
@@ -72,6 +75,7 @@ func (s *EnvironmentService) Upsert(ctx context.Context, req model.UpsertEnviron
 		AgentPrompt:     req.AgentPrompt,
 		Mounts:          append([]model.Mount(nil), req.Mounts...),
 		Resources:       req.Resources,
+		NetworkPolicy:   req.NetworkPolicy.Clone(),
 		Enabled:         req.Enabled,
 		DefaultExecute:  req.DefaultExecute.Clone(),
 		Build:           req.Build.Clone(),
@@ -226,6 +230,7 @@ func (s *EnvironmentService) baseEnvironmentView(environment *model.Environment)
 		AgentPrompt:     environment.AgentPrompt,
 		Mounts:          append([]model.Mount(nil), environment.Mounts...),
 		Resources:       environment.Resources,
+		NetworkPolicy:   environment.NetworkPolicy.Clone(),
 		Enabled:         environment.Enabled,
 		DefaultExecute:  environment.DefaultExecute.Clone(),
 		Build:           environment.Build.Clone(),

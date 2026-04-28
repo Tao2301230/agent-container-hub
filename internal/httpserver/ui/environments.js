@@ -85,6 +85,8 @@ function clearEnvironmentForm() {
   document.getElementById("default-execute-cwd").value = "";
   document.getElementById("default-execute-timeout").value = "";
   document.getElementById("default-execute-args").value = "";
+  document.getElementById("network-policy-whitelist").value = "";
+  document.getElementById("network-policy-blacklist").value = "";
   state.environments.selectedSummary = null;
   state.environments.selectedBuild = defaultBuild();
   state.environments.selectedDetails = defaultEnvironmentDetails();
@@ -132,6 +134,7 @@ function defaultEnvironmentDetails() {
     default_env: {},
     mounts: [],
     resources: { cpu: 0, memory_mb: 0, pids: 0 },
+    network_policy: null,
     enabled: true,
   };
 }
@@ -170,8 +173,47 @@ function normalizeEnvironmentDetails(item) {
     default_env: { ...(item?.default_env || {}) },
     mounts: Array.isArray(item?.mounts) ? item.mounts.map((mount) => ({ ...mount })) : [],
     resources: { ...defaultEnvironmentDetails().resources, ...(item?.resources || {}) },
+    network_policy: normalizeNetworkPolicy(item?.network_policy),
     enabled: item?.enabled ?? true,
   };
+}
+
+function normalizeNetworkPolicy(policy) {
+  if (!policy) {
+    return null;
+  }
+  const normalized = {
+    whitelist: Array.isArray(policy.whitelist) ? policy.whitelist.map((item) => String(item || "").trim()).filter(Boolean) : [],
+    blacklist: Array.isArray(policy.blacklist) ? policy.blacklist.map((item) => String(item || "").trim()).filter(Boolean) : [],
+  };
+  return normalized.whitelist.length > 0 || normalized.blacklist.length > 0 ? normalized : null;
+}
+
+function networkPolicyEntriesToText(entries) {
+  return Array.isArray(entries) ? entries.join("\n") : "";
+}
+
+function textToNetworkPolicyEntries(value) {
+  return String(value || "")
+    .split("\n")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function collectNetworkPolicyFromText(whitelistText, blacklistText) {
+  const policy = {
+    whitelist: textToNetworkPolicyEntries(whitelistText),
+    blacklist: textToNetworkPolicyEntries(blacklistText),
+  };
+  return policy.whitelist.length > 0 || policy.blacklist.length > 0 ? policy : null;
+}
+
+function networkPolicySummary(policy) {
+  const normalized = normalizeNetworkPolicy(policy);
+  if (!normalized) {
+    return "Network policy: none";
+  }
+  return `Network policy: ${normalized.whitelist.length} whitelist · ${normalized.blacklist.length} blacklist`;
 }
 
 function normalizeExecutePreset(preset) {
@@ -264,6 +306,7 @@ function environmentStatusSummary(item) {
   const lines = [
     `Image: ${item?.image_ref || "-"}`,
     `Status: ${enabledLabel} · ${availabilityLabel}`,
+    networkPolicySummary(item?.network_policy),
     `Packaged at: ${metadata.createdAt}`,
     `Transfer size: ${metadata.totalSize}`,
     `Disk size: ${metadata.uniqueSize}`,
@@ -549,6 +592,8 @@ async function selectEnvironment(name) {
   document.getElementById("default-execute-cwd").value = state.environments.selectedDefaultExecute.cwd || "";
   document.getElementById("default-execute-timeout").value = state.environments.selectedDefaultExecute.timeout_ms || "";
   document.getElementById("default-execute-args").value = state.environments.selectedDefaultExecute.args.join("\n");
+  document.getElementById("network-policy-whitelist").value = networkPolicyEntriesToText(state.environments.selectedDetails.network_policy?.whitelist);
+  document.getElementById("network-policy-blacklist").value = networkPolicyEntriesToText(state.environments.selectedDetails.network_policy?.blacklist);
   state.environments.selectedAvailableBuildTargets = normalizeBuildTargets(item.available_build_targets);
   renderEnvironmentOverview(item);
   environmentOutput.textContent = environmentStatusSummary(item);
@@ -583,6 +628,10 @@ function collectEnvironmentPayload() {
     agent_prompt: state.environments.selectedAgentPrompt,
     mounts: state.environments.selectedDetails.mounts.map((mount) => ({ ...mount })),
     resources: { ...state.environments.selectedDetails.resources },
+    network_policy: collectNetworkPolicyFromText(
+      document.getElementById("network-policy-whitelist").value,
+      document.getElementById("network-policy-blacklist").value,
+    ),
     enabled: state.environments.selectedDetails.enabled,
     default_execute: defaultExecute,
     build,
