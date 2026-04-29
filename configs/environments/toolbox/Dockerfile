@@ -67,6 +67,7 @@ RUN set -euo pipefail; \
         ca-certificates \
         coreutils \
         curl \
+        iptables \
         jq \
         sed \
         tar \

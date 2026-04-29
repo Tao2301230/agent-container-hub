@@ -43,7 +43,9 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	probeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	provider, err := runtime.NewAutoProvider(probeCtx, cfg.Engine, logger)
+	provider, err := runtime.NewAutoProvider(probeCtx, cfg.Engine, logger, runtime.ProviderOptions{
+		NetworkPolicyHelperImage: cfg.NetworkPolicyHelperImage,
+	})
 	if err != nil {
 		log.Fatalf("load runtime provider: %v", err)
 	}

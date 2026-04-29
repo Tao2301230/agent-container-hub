@@ -24,6 +24,7 @@ type Config struct {
 	HTTPErrorLogEnabled      bool
 	EnableExecLogPersist     bool
 	ExecLogMaxOutputBytes    int
+	NetworkPolicyHelperImage string
 }
 
 const removedLocalEngineMessage = "ENGINE=" + "local has been removed; set ENGINE to docker, podman, or auto, or leave empty for auto-detect"
@@ -48,6 +49,7 @@ func Load() (Config, error) {
 		HTTPErrorLogEnabled:      getEnvBool("HTTP_ERROR_LOG_ENABLED", false),
 		EnableExecLogPersist:     getEnvBool("ENABLE_EXEC_LOG_PERSIST", false),
 		ExecLogMaxOutputBytes:    getEnvInt("EXEC_LOG_MAX_OUTPUT_BYTES", 65536),
+		NetworkPolicyHelperImage: getEnv("NETWORK_POLICY_HELPER_IMAGE", "agent-container-hub/network-policy-helper:latest"),
 	}
 	if cfg.StateDBPath, err = absolutePath(cfg.StateDBPath); err != nil {
 		return Config{}, fmt.Errorf("normalize state db path: %w", err)
@@ -89,6 +91,9 @@ func (c Config) Validate() error {
 	}
 	if c.ExecLogMaxOutputBytes < 0 {
 		return fmt.Errorf("EXEC_LOG_MAX_OUTPUT_BYTES must be >= 0")
+	}
+	if strings.TrimSpace(c.NetworkPolicyHelperImage) == "" {
+		return fmt.Errorf("NETWORK_POLICY_HELPER_IMAGE is required")
 	}
 	return nil
 }

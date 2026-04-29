@@ -99,7 +99,7 @@ func TestCLIProviderCreateDoesNotInspect(t *testing.T) {
 	}
 }
 
-func TestCLIProviderCreateAddsNetAdminForNetworkPolicy(t *testing.T) {
+func TestCLIProviderCreateDropsNetAdminForNetworkPolicy(t *testing.T) {
 	t.Parallel()
 
 	binary, logPath := writeFakeRuntimeBinary(t)
@@ -119,8 +119,15 @@ func TestCLIProviderCreateAddsNetAdminForNetworkPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
-	if !strings.Contains(string(logData), "--cap-add=NET_ADMIN") {
-		t.Fatalf("Create() log = %q, want NET_ADMIN capability", string(logData))
+	logText := string(logData)
+	if strings.Contains(logText, "--cap-add=NET_ADMIN") {
+		t.Fatalf("Create() log = %q, did not expect NET_ADMIN capability", logText)
+	}
+	if !strings.Contains(logText, "--cap-drop=NET_ADMIN") {
+		t.Fatalf("Create() log = %q, want NET_ADMIN dropped", logText)
+	}
+	if !strings.Contains(logText, "--security-opt=no-new-privileges") {
+		t.Fatalf("Create() log = %q, want no-new-privileges", logText)
 	}
 }
 

@@ -129,6 +129,18 @@ dist/release/agent-container-hub-vX.Y.Z-windows-amd64.zip
 dist/release/agent-container-hub-image-vX.Y.Z-linux-<arch>.tar.gz
 ```
 
+构建 network policy helper 镜像：
+
+```bash
+make network-policy-helper-image
+```
+
+默认镜像名为 `agent-container-hub/network-policy-helper:latest`。如需使用 Podman 或自定义镜像名：
+
+```bash
+CONTAINER_ENGINE=podman NETWORK_POLICY_HELPER_IMAGE=registry.example.com/policy-helper:v1 make network-policy-helper-image
+```
+
 program bundle 解压后包含：
 
 - `manifest.json`
@@ -215,6 +227,9 @@ PROGRAM_TARGETS=windows make release-program VERSION=v0.1.0 ARCH=amd64
 - `EXEC_LOG_MAX_OUTPUT_BYTES`
   - 默认值：`65536`
   - 持久化 `stdout/stderr` 时的单字段最大字节数，超出会截断并记录标记
+- `NETWORK_POLICY_HELPER_IMAGE`
+  - 默认值：`agent-container-hub/network-policy-helper:latest`
+  - 当 session 配置 `network_policy` 时，服务端用该 helper 镜像加入 session 容器的 network namespace 并安装 iptables/ip6tables 规则
 
 示例：
 
@@ -252,6 +267,9 @@ DEFAULT_COMMAND_TIMEOUT=30s
 # Persist execute stdout/stderr into SQLite for future session execution history queries.
 # Set to true only if you want `/executions` to retain logs beyond the current response.
 ENABLE_EXEC_LOG_PERSIST=true
+
+# Helper image used to install enforced network_policy rules from outside the session container.
+NETWORK_POLICY_HELPER_IMAGE=agent-container-hub/network-policy-helper:latest
 
 # Max bytes stored per stdout/stderr field in session_executions when persistence is enabled.
 # Larger values keep more output but grow the SQLite file faster.
@@ -502,6 +520,18 @@ build:
     FROM busybox:latest
     CMD ["/bin/sh"]
 ```
+
+`network_policy` 可在 environment 默认配置或创建 session 时声明，字段保持为 IP/CIDR allowlist/denylist：
+
+```yaml
+network_policy:
+  whitelist:
+    - 10.0.0.0/8
+  blacklist:
+    - 10.0.0.2
+```
+
+策略由宿主侧启动临时 helper 容器安装到 session 的 network namespace。session 容器本身不会获得 `NET_ADMIN`，因此容器内 root 不能直接修改这些规则；拥有宿主机 Docker/Podman 控制权的用户仍可绕过该边界。helper 镜像缺失或规则安装失败时，session 创建会失败并清理，不会降级为放行。
 
 `daily-office-pro` 这类需要运行时技能目录挂载的环境，可以通过 session mount 或 environment `mounts` 声明 `/skills`，并配合 MiniMax skill 路径约定设置环境变量：
 

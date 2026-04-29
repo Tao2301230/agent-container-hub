@@ -22,8 +22,9 @@ import (
 )
 
 type CLIProvider struct {
-	binary string
-	logger *slog.Logger
+	binary                   string
+	logger                   *slog.Logger
+	networkPolicyHelperImage string
 }
 
 type commandResult struct {
@@ -34,14 +35,20 @@ type commandResult struct {
 
 const containerKeepAliveSleepSeconds = 3600
 const engineProbeTimeout = 5 * time.Second
+const DefaultNetworkPolicyHelperImage = "agent-container-hub/network-policy-helper:latest"
 
-func NewAutoProvider(ctx context.Context, explicit string, logger *slog.Logger) (Provider, error) {
+type ProviderOptions struct {
+	NetworkPolicyHelperImage string
+}
+
+func NewAutoProvider(ctx context.Context, explicit string, logger *slog.Logger, options ...ProviderOptions) (Provider, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if logger == nil {
 		logger = slog.Default()
 	}
+	opts := normalizeProviderOptions(options...)
 	explicit = strings.TrimSpace(explicit)
 	if explicit != "" && !strings.EqualFold(explicit, "auto") {
 		resolvedBinary, err := exec.LookPath(explicit)
@@ -51,7 +58,7 @@ func NewAutoProvider(ctx context.Context, explicit string, logger *slog.Logger) 
 		if err := pingEngine(ctx, resolvedBinary, logger); err != nil {
 			return nil, fmt.Errorf("%w: %s: daemon not reachable: %v", ErrRuntimeUnavailable, explicit, err)
 		}
-		return &CLIProvider{binary: explicit, logger: logger}, nil
+		return &CLIProvider{binary: explicit, logger: logger, networkPolicyHelperImage: opts.NetworkPolicyHelperImage}, nil
 	}
 	var reasons []string
 	for _, candidate := range []string{"docker", "podman"} {
@@ -64,12 +71,24 @@ func NewAutoProvider(ctx context.Context, explicit string, logger *slog.Logger) 
 			reasons = append(reasons, fmt.Sprintf("%s: daemon not reachable: %v", candidate, err))
 			continue
 		}
-		return &CLIProvider{binary: candidate, logger: logger}, nil
+		return &CLIProvider{binary: candidate, logger: logger, networkPolicyHelperImage: opts.NetworkPolicyHelperImage}, nil
 	}
 	if len(reasons) == 0 {
 		return nil, ErrRuntimeUnavailable
 	}
 	return nil, fmt.Errorf("%w: %s", ErrRuntimeUnavailable, strings.Join(reasons, "; "))
+}
+
+func normalizeProviderOptions(options ...ProviderOptions) ProviderOptions {
+	opts := ProviderOptions{NetworkPolicyHelperImage: DefaultNetworkPolicyHelperImage}
+	if len(options) > 0 {
+		opts = options[0]
+	}
+	opts.NetworkPolicyHelperImage = strings.TrimSpace(opts.NetworkPolicyHelperImage)
+	if opts.NetworkPolicyHelperImage == "" {
+		opts.NetworkPolicyHelperImage = DefaultNetworkPolicyHelperImage
+	}
+	return opts
 }
 
 func pingEngine(ctx context.Context, binary string, logger *slog.Logger) error {
@@ -132,7 +151,7 @@ func (p *CLIProvider) Create(ctx context.Context, opts CreateOptions) (Container
 		args = append(args, "--pids-limit", strconv.Itoa(opts.Resources.PIDs))
 	}
 	if !opts.NetworkPolicy.IsEmpty() {
-		args = append(args, "--cap-add=NET_ADMIN")
+		args = append(args, "--cap-drop=NET_ADMIN", "--security-opt=no-new-privileges")
 	}
 	for key, value := range opts.Env {
 		args = append(args, "--env", fmt.Sprintf("%s=%s", key, value))

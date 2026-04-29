@@ -123,6 +123,27 @@ func TestLoadParsesDeleteRootfsOnStop(t *testing.T) {
 	}
 }
 
+func TestLoadNetworkPolicyHelperImage(t *testing.T) {
+	t.Setenv("NETWORK_POLICY_HELPER_IMAGE", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.NetworkPolicyHelperImage != "agent-container-hub/network-policy-helper:latest" {
+		t.Fatalf("NetworkPolicyHelperImage = %q, want default", cfg.NetworkPolicyHelperImage)
+	}
+
+	t.Setenv("NETWORK_POLICY_HELPER_IMAGE", "registry.example.com/policy-helper:v2")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load() with override error = %v", err)
+	}
+	if cfg.NetworkPolicyHelperImage != "registry.example.com/policy-helper:v2" {
+		t.Fatalf("NetworkPolicyHelperImage = %q, want override", cfg.NetworkPolicyHelperImage)
+	}
+}
+
 func TestLoadRejectsRemovedLocalEngine(t *testing.T) {
 	t.Setenv("ENGINE", "local")
 

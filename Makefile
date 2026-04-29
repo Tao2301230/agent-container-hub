@@ -3,8 +3,10 @@ VERSION := $(shell cat VERSION 2>/dev/null || echo "dev")
 ARCH ?= $(shell uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')
 LDFLAGS := -X main.buildVersion=$(VERSION)
 BUILD_DIR := dist/release
+CONTAINER_ENGINE ?= docker
+NETWORK_POLICY_HELPER_IMAGE ?= agent-container-hub/network-policy-helper:latest
 
-.PHONY: build run test docker-build release release-program release-image clean
+.PHONY: build run test docker-build network-policy-helper-image release release-program release-image clean
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o ./$(APP_NAME) ./cmd/agent-container-hub
@@ -17,6 +19,9 @@ test:
 
 docker-build:
 	docker build --build-arg VERSION=$(VERSION) -t agent-container-hub:latest .
+
+network-policy-helper-image:
+	$(CONTAINER_ENGINE) build -t $(NETWORK_POLICY_HELPER_IMAGE) configs/network-policy-helper
 
 release:
 	$(MAKE) release-program VERSION=$(VERSION) ARCH=$(ARCH)
