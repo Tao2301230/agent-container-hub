@@ -12,7 +12,6 @@ require_release_tools
 resolve_release_context
 
 require_dir "$PROGRAM_RELEASE_ASSETS_DIR"
-require_file "$PROGRAM_RELEASE_ASSETS_DIR/README.txt"
 require_file "$PROGRAM_RELEASE_ASSETS_DIR/unix/deploy.sh"
 require_file "$PROGRAM_RELEASE_ASSETS_DIR/unix/start.sh"
 require_file "$PROGRAM_RELEASE_ASSETS_DIR/unix/stop.sh"
@@ -67,7 +66,6 @@ build_program_bundle() {
 
   echo "[release] assembling program bundle for $target_os..."
   cp "$REPO_ROOT/.env.example" "$bundle_root/.env.example"
-  cp "$PROGRAM_RELEASE_ASSETS_DIR/README.txt" "$bundle_root/README.txt"
   write_program_manifest "$bundle_root/manifest.json" "$target_os" "$target_arch" "$backend_entry" "$(basename "$bundle_archive")"
 
   tar --exclude='.DS_Store' -C "$REPO_ROOT/configs" -cf - environments | tar -C "$bundle_root/configs" -xf -
