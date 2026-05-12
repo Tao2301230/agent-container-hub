@@ -25,6 +25,7 @@ type Config struct {
 	EnableExecLogPersist     bool
 	ExecLogMaxOutputBytes    int
 	NetworkPolicyHelperImage string
+	DisplayTimezone          string
 }
 
 const removedLocalEngineMessage = "ENGINE=" + "local has been removed; set ENGINE to docker, podman, or auto, or leave empty for auto-detect"
@@ -50,6 +51,10 @@ func Load() (Config, error) {
 		EnableExecLogPersist:     getEnvBool("ENABLE_EXEC_LOG_PERSIST", false),
 		ExecLogMaxOutputBytes:    getEnvInt("EXEC_LOG_MAX_OUTPUT_BYTES", 65536),
 		NetworkPolicyHelperImage: getEnv("NETWORK_POLICY_HELPER_IMAGE", "agent-container-hub/network-policy-helper:latest"),
+		DisplayTimezone: resolveDisplayTimezone(
+			strings.TrimSpace(os.Getenv("DISPLAY_TIMEZONE")),
+			strings.TrimSpace(os.Getenv("TZ")),
+		),
 	}
 	if cfg.StateDBPath, err = absolutePath(cfg.StateDBPath); err != nil {
 		return Config{}, fmt.Errorf("normalize state db path: %w", err)
@@ -94,6 +99,9 @@ func (c Config) Validate() error {
 	}
 	if strings.TrimSpace(c.NetworkPolicyHelperImage) == "" {
 		return fmt.Errorf("NETWORK_POLICY_HELPER_IMAGE is required")
+	}
+	if _, err := time.LoadLocation(c.DisplayTimezone); err != nil {
+		return fmt.Errorf("DISPLAY_TIMEZONE / TZ %q is not a valid IANA timezone: %w", c.DisplayTimezone, err)
 	}
 	return nil
 }

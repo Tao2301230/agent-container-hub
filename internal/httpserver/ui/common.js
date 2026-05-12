@@ -174,8 +174,59 @@ export function setLoading(button, loading) {
   delete button.dataset.loadingDisabled;
 }
 
+let displayTimezone = "UTC";
+let uiConfigPromise = null;
+
+export function getDisplayTimezone() {
+  return displayTimezone;
+}
+
+export async function ensureUiConfig() {
+  if (!uiConfigPromise) {
+    uiConfigPromise = (async () => {
+      try {
+        const info = await api("/api/runtime-info");
+        const tz = info?.display_timezone;
+        if (typeof tz === "string" && tz.trim()) {
+          displayTimezone = tz.trim();
+        }
+      } catch {
+        /* keep UTC */
+      }
+    })();
+  }
+  await uiConfigPromise;
+}
+
+export function formatDateTime(value, { includeSeconds = true } = {}) {
+  if (!value) {
+    return "-";
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return String(value);
+  }
+  const options = {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: displayTimezone,
+  };
+  if (includeSeconds) {
+    options.second = "2-digit";
+  }
+  try {
+    return new Intl.DateTimeFormat(undefined, options).format(parsed);
+  } catch {
+    return new Intl.DateTimeFormat(undefined, { ...options, timeZone: "UTC" }).format(parsed);
+  }
+}
+
 export function formatTime(value) {
-  return value || "-";
+  return formatDateTime(value);
 }
 
 export function escapeHTML(value) {

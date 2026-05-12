@@ -60,15 +60,16 @@ type BuildService interface {
 }
 
 type Server struct {
-	sessions     SessionService
-	environments EnvironmentService
-	builds       BuildService
-	engineName   string
-	authToken    string
-	uiFS         fs.FS
-	logger       *slog.Logger
-	accessLogs   bool
-	errorLogs    bool
+	sessions        SessionService
+	environments    EnvironmentService
+	builds          BuildService
+	engineName      string
+	displayTimezone string
+	authToken       string
+	uiFS            fs.FS
+	logger          *slog.Logger
+	accessLogs      bool
+	errorLogs       bool
 }
 
 type Options struct {
@@ -76,6 +77,7 @@ type Options struct {
 	AccessLogEnabled bool
 	EngineName       string
 	ErrorLogEnabled  bool
+	DisplayTimezone  string
 }
 
 func New(sessions SessionService, environments EnvironmentService, builds BuildService, authToken string, options Options) http.Handler {
@@ -87,16 +89,21 @@ func New(sessions SessionService, environments EnvironmentService, builds BuildS
 	if logger == nil {
 		logger = slog.Default()
 	}
+	displayTimezone := strings.TrimSpace(options.DisplayTimezone)
+	if displayTimezone == "" {
+		displayTimezone = "UTC"
+	}
 	server := &Server{
-		sessions:     sessions,
-		environments: environments,
-		builds:       builds,
-		engineName:   strings.TrimSpace(options.EngineName),
-		authToken:    strings.TrimSpace(authToken),
-		uiFS:         uiFS,
-		logger:       logger,
-		accessLogs:   options.AccessLogEnabled,
-		errorLogs:    options.ErrorLogEnabled,
+		sessions:        sessions,
+		environments:    environments,
+		builds:          builds,
+		engineName:      strings.TrimSpace(options.EngineName),
+		displayTimezone: displayTimezone,
+		authToken:       strings.TrimSpace(authToken),
+		uiFS:            uiFS,
+		logger:          logger,
+		accessLogs:      options.AccessLogEnabled,
+		errorLogs:       options.ErrorLogEnabled,
 	}
 	mux := http.NewServeMux()
 	apiMux := http.NewServeMux()
@@ -439,7 +446,8 @@ func (s *Server) handleGetEnvironment(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRuntimeInfo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{
-		"engine": s.engineName,
+		"engine":           s.engineName,
+		"display_timezone": s.displayTimezone,
 	})
 }
 

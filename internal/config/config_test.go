@@ -155,3 +155,50 @@ func TestLoadRejectsRemovedLocalEngine(t *testing.T) {
 		t.Fatalf("Load() error = %q, want %q", err.Error(), removedLocalEngineMessage)
 	}
 }
+
+func TestLoadDisplayTimezoneOverride(t *testing.T) {
+	t.Setenv("DISPLAY_TIMEZONE", "Asia/Tokyo")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.DisplayTimezone != "Asia/Tokyo" {
+		t.Fatalf("DisplayTimezone = %q, want Asia/Tokyo", cfg.DisplayTimezone)
+	}
+}
+
+func TestLoadDisplayTimezoneFallsBackToTZEnv(t *testing.T) {
+	t.Setenv("DISPLAY_TIMEZONE", "")
+	t.Setenv("TZ", "Europe/Berlin")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.DisplayTimezone != "Europe/Berlin" {
+		t.Fatalf("DisplayTimezone = %q, want Europe/Berlin", cfg.DisplayTimezone)
+	}
+}
+
+func TestLoadDisplayTimezonePrefersDisplayTimezoneOverTZ(t *testing.T) {
+	t.Setenv("DISPLAY_TIMEZONE", "America/New_York")
+	t.Setenv("TZ", "Europe/Berlin")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.DisplayTimezone != "America/New_York" {
+		t.Fatalf("DisplayTimezone = %q, want America/New_York", cfg.DisplayTimezone)
+	}
+}
+
+func TestLoadRejectsInvalidDisplayTimezone(t *testing.T) {
+	t.Setenv("DISPLAY_TIMEZONE", "NotA/Real_Timezone")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() error = nil, want invalid timezone")
+	}
+}

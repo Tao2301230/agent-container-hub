@@ -2,7 +2,9 @@ import {
   api,
   bindModalDismiss,
   closeModal,
+  ensureUiConfig,
   escapeHTML,
+  formatDateTime,
   initializeShell,
   openModal,
   setLoading,
@@ -232,28 +234,6 @@ function availabilityClass(item) {
   return item?.available ? "" : "stopped";
 }
 
-function formatImageTimestamp(value, { includeSeconds = true } = {}) {
-  if (!value) {
-    return "-";
-  }
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return String(value);
-  }
-  const options = {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  };
-  if (includeSeconds) {
-    options.second = "2-digit";
-  }
-  return new Intl.DateTimeFormat(undefined, options).format(parsed);
-}
-
 function formatBytes(value) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -272,7 +252,7 @@ function formatBytes(value) {
 
 function imageMetadataLabel(item, options = {}) {
   return {
-    createdAt: formatImageTimestamp(item?.image_metadata?.created_at, options),
+    createdAt: formatDateTime(item?.image_metadata?.created_at, options),
     totalSize: formatBytes(item?.image_metadata?.total_size_bytes),
     uniqueSize: formatBytes(item?.image_metadata?.unique_size_bytes),
   };
@@ -286,7 +266,7 @@ function formatBuildSummary(job) {
 }
 
 function formatBuildMoment(job, field, options = {}) {
-  return formatImageTimestamp(job?.[field], options);
+  return formatDateTime(job?.[field], options);
 }
 
 function formatBuildMetaLine(job, options = {}) {
@@ -312,7 +292,7 @@ function environmentStatusSummary(item) {
     `Disk size: ${metadata.uniqueSize}`,
   ];
   if (item?.last_build) {
-    lines.unshift(`Last build: ${formatBuildStatus(item.last_build.status)}${buildTargetSuffix(item.last_build.target)} @ ${formatImageTimestamp(item.last_build.started_at)}`);
+    lines.unshift(`Last build: ${formatBuildStatus(item.last_build.status)}${buildTargetSuffix(item.last_build.target)} @ ${formatDateTime(item.last_build.started_at)}`);
   } else {
     lines.unshift("Last build: none");
   }
@@ -334,8 +314,8 @@ function renderEnvironmentOverview(item = state.environments.selectedSummary) {
   const lastBuild = item?.last_build || null;
   const buildStartedAt = formatBuildMoment(lastBuild, "started_at");
   const buildFinishedAt = formatBuildMoment(lastBuild, "finished_at");
-  const configUpdatedAt = formatImageTimestamp(item?.updated_at);
-  const configCreatedAt = formatImageTimestamp(item?.created_at);
+  const configUpdatedAt = formatDateTime(item?.updated_at);
+  const configCreatedAt = formatDateTime(item?.created_at);
 
   environmentOverview.innerHTML = `
     <div class="detail-grid environment-overview-grid">
@@ -730,14 +710,14 @@ function renderBuildProgress() {
     </div>
     <div class="detail-box">
       <div class="meta">Started</div>
-      <strong>${escapeHTML(job.started_at || "-")}</strong>
+      <strong>${escapeHTML(formatDateTime(job.started_at))}</strong>
     </div>
   `;
 
   const stateLabel = isBuildActive(job.status)
     ? "Streaming build output."
     : (job.error ? `Build finished with error: ${job.error}` : "Build finished.");
-  buildProgressMeta.textContent = `${stateLabel} Job ${job.id || "-"}${job.finished_at ? ` · finished ${job.finished_at}` : ""}`;
+  buildProgressMeta.textContent = `${stateLabel} Job ${job.id || "-"}${job.finished_at ? ` · finished ${formatDateTime(job.finished_at)}` : ""}`;
   buildProgressLog.textContent = state.buildProgress.log || "Waiting for build output...";
   if (buildProgressAutoscroll.checked) {
     buildProgressLog.scrollTop = buildProgressLog.scrollHeight;
@@ -938,6 +918,7 @@ async function handleBuildButtonClick() {
 async function initialize() {
   initializeShell("environments");
   bindModalDismiss();
+  await ensureUiConfig();
 
   if (openEnvironmentListButton) {
     openEnvironmentListButton.addEventListener("click", () => {

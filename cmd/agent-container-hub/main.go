@@ -79,6 +79,7 @@ func main() {
 			AccessLogEnabled: cfg.HTTPAccessLogEnabled,
 			EngineName:       provider.Name(),
 			ErrorLogEnabled:  cfg.HTTPErrorLogEnabled,
+			DisplayTimezone:  cfg.DisplayTimezone,
 		}),
 		ReadHeaderTimeout: httpReadHeaderTimeout,
 	}

@@ -254,6 +254,26 @@ func TestRuntimeInfoEndpointReturnsEngineName(t *testing.T) {
 	if response["engine"] != "docker" {
 		t.Fatalf("engine = %q, want docker", response["engine"])
 	}
+	if response["display_timezone"] != "UTC" {
+		t.Fatalf("display_timezone = %q, want UTC", response["display_timezone"])
+	}
+}
+
+func TestRuntimeInfoEndpointUsesConfiguredDisplayTimezone(t *testing.T) {
+	t.Parallel()
+
+	handler, _ := newTestHandlerWithServerOptions(t, "", Options{
+		EngineName:      "podman",
+		DisplayTimezone: "Asia/Shanghai",
+	})
+
+	response := doJSON[map[string]string](t, handler, http.MethodGet, "/api/runtime-info", nil, http.StatusOK, "")
+	if response["display_timezone"] != "Asia/Shanghai" {
+		t.Fatalf("display_timezone = %q, want Asia/Shanghai", response["display_timezone"])
+	}
+	if response["engine"] != "podman" {
+		t.Fatalf("engine = %q, want podman", response["engine"])
+	}
 }
 
 func TestRuntimeInfoEndpointRequiresAuth(t *testing.T) {
@@ -1862,6 +1882,9 @@ func newHandlerForConfigWithRuntimeAndOptions(t *testing.T, cfg config.Config, o
 	environmentService := sandbox.NewEnvironmentService(cfg.ConfigRoot, envs, buildService, fake, serviceLogger)
 	if options.Logger == nil {
 		options.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
+	if strings.TrimSpace(options.DisplayTimezone) == "" {
+		options.DisplayTimezone = cfg.DisplayTimezone
 	}
 	return New(sessionService, environmentService, buildService, cfg.AuthToken, options), cfg, fake
 }

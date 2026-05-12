@@ -2,6 +2,7 @@ import {
   api,
   bindModalDismiss,
   closeModal,
+  ensureUiConfig,
   escapeHTML,
   formatTime,
   initializeShell,
@@ -126,29 +127,6 @@ function buildExecutionQueryString() {
   }).toString();
 }
 
-function padDatePart(value) {
-  return String(value).padStart(2, "0");
-}
-
-function formatExecutionHistoryTime(value) {
-  if (!value) {
-    return "-";
-  }
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return String(value);
-  }
-  return [
-    parsed.getFullYear(),
-    padDatePart(parsed.getMonth() + 1),
-    padDatePart(parsed.getDate()),
-  ].join("-") + ` ${[
-    padDatePart(parsed.getHours()),
-    padDatePart(parsed.getMinutes()),
-    padDatePart(parsed.getSeconds()),
-  ].join(":")}`;
-}
-
 function summarizeExecutionArgs(args, maxLength = 104) {
   const summary = Array.isArray(args)
     ? args.map((item) => String(item ?? "").trim()).filter(Boolean).join(" ").replace(/\s+/g, " ").trim()
@@ -166,7 +144,7 @@ function executionHistoryTitle(item) {
   const parts = [
     item.command || "-",
     summarizeExecutionArgs(item.args, 220),
-    item.started_at || "-",
+    formatTime(item.started_at),
     item.cwd || "-",
   ].filter(Boolean);
   return parts.join(" | ");
@@ -826,7 +804,7 @@ function renderExecuteLogs() {
         <span class="pill ${item.exit_code === 0 ? "" : "stopped"}">exit ${escapeHTML(item.exit_code)}</span>
       </div>
       <div class="history-item-meta">
-        <span class="history-chip">${escapeHTML(formatExecutionHistoryTime(item.started_at))}</span>
+        <span class="history-chip">${escapeHTML(formatTime(item.started_at))}</span>
         <span class="history-chip">${escapeHTML(item.duration_ms)} ms</span>
         <span class="history-chip history-chip-path">${escapeHTML(item.cwd || "-")}</span>
         ${(item.args || []).length > 0 ? `<span class="history-chip">${escapeHTML((item.args || []).length)} arg${(item.args || []).length === 1 ? "" : "s"}</span>` : ""}
@@ -851,8 +829,8 @@ function renderExecuteLogs() {
       <div class="detail-box"><div class="meta">Exit Code</div><strong>${escapeHTML(selected.exit_code)}</strong></div>
       <div class="detail-box"><div class="meta">Cwd</div><strong>${escapeHTML(selected.cwd || "-")}</strong></div>
       <div class="detail-box"><div class="meta">Timeout</div><strong>${escapeHTML(selected.timeout_ms)} ms</strong></div>
-      <div class="detail-box"><div class="meta">Started At</div><strong>${escapeHTML(selected.started_at || "-")}</strong></div>
-      <div class="detail-box"><div class="meta">Finished At</div><strong>${escapeHTML(selected.finished_at || "-")}</strong></div>
+      <div class="detail-box"><div class="meta">Started At</div><strong>${escapeHTML(formatTime(selected.started_at))}</strong></div>
+      <div class="detail-box"><div class="meta">Finished At</div><strong>${escapeHTML(formatTime(selected.finished_at))}</strong></div>
       <div class="detail-box"><div class="meta">Duration</div><strong>${escapeHTML(selected.duration_ms)} ms</strong></div>
       <div class="detail-box"><div class="meta">Timed Out</div><strong>${selected.timed_out ? "true" : "false"}</strong></div>
     </div>
@@ -1030,6 +1008,7 @@ async function applySessionFilters() {
 async function initialize() {
   initializeShell("sessions");
   bindModalDismiss();
+  await ensureUiConfig();
   renderSessionStatusFilterTags();
 
   document.getElementById("session-filter-status").addEventListener("click", async (event) => {
