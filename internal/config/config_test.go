@@ -95,6 +95,47 @@ func TestLoadUsesRenamedDefaultStateDBPath(t *testing.T) {
 	}
 }
 
+func TestLoadUsesServiceConfigAndDataDirsForDefaults(t *testing.T) {
+	previousWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	programDir := t.TempDir()
+	if err := os.Chdir(programDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(previousWD)
+	})
+
+	configDir := t.TempDir()
+	dataDir := t.TempDir()
+	t.Setenv("SERVICE_CONFIG_DIR", configDir)
+	t.Setenv("ZENMIND_SERVICE_DATA_DIR", dataDir)
+	t.Setenv("CONFIG_ROOT", "")
+	t.Setenv("STATE_DB_PATH", "")
+	t.Setenv("ROOTFS_ROOT", "")
+	t.Setenv("BUILD_ROOT", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if want := filepath.Join(configDir, "configs"); cfg.ConfigRoot != want {
+		t.Fatalf("ConfigRoot = %q, want %q", cfg.ConfigRoot, want)
+	}
+	if want := filepath.Join(dataDir, "hub.db"); cfg.StateDBPath != want {
+		t.Fatalf("StateDBPath = %q, want %q", cfg.StateDBPath, want)
+	}
+	if want := filepath.Join(dataDir, "rootfs"); cfg.RootfsRoot != want {
+		t.Fatalf("RootfsRoot = %q, want %q", cfg.RootfsRoot, want)
+	}
+	if want := filepath.Join(dataDir, "builds"); cfg.BuildRoot != want {
+		t.Fatalf("BuildRoot = %q, want %q", cfg.BuildRoot, want)
+	}
+}
+
 func TestLoadParsesHTTPLogFlags(t *testing.T) {
 	t.Setenv("HTTP_ACCESS_LOG_ENABLED", "true")
 	t.Setenv("HTTP_ERROR_LOG_ENABLED", "1")

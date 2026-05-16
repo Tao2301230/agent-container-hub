@@ -35,13 +35,27 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("getwd: %w", err)
 	}
+	serviceConfigDir := strings.TrimSpace(os.Getenv("SERVICE_CONFIG_DIR"))
+	serviceDataDir := strings.TrimSpace(os.Getenv("ZENMIND_SERVICE_DATA_DIR"))
+	configRootDefault := filepath.Join(cwd, "configs")
+	stateDBPathDefault := filepath.Join(cwd, "data", "hub.db")
+	rootfsRootDefault := filepath.Join(cwd, "data", "rootfs")
+	buildRootDefault := filepath.Join(cwd, "data", "builds")
+	if serviceConfigDir != "" {
+		configRootDefault = filepath.Join(serviceConfigDir, "configs")
+	}
+	if serviceDataDir != "" {
+		stateDBPathDefault = filepath.Join(serviceDataDir, "hub.db")
+		rootfsRootDefault = filepath.Join(serviceDataDir, "rootfs")
+		buildRootDefault = filepath.Join(serviceDataDir, "builds")
+	}
 	cfg := Config{
 		BindAddr:                 getEnv("BIND_ADDR", "127.0.0.1:8080"),
 		AuthToken:                strings.TrimSpace(os.Getenv("AUTH_TOKEN")),
-		StateDBPath:              getEnv("STATE_DB_PATH", filepath.Join(cwd, "data", "hub.db")),
-		ConfigRoot:               getEnv("CONFIG_ROOT", filepath.Join(cwd, "configs")),
-		RootfsRoot:               getEnv("ROOTFS_ROOT", filepath.Join(cwd, "data", "rootfs")),
-		BuildRoot:                getEnv("BUILD_ROOT", filepath.Join(cwd, "data", "builds")),
+		StateDBPath:              getEnv("STATE_DB_PATH", stateDBPathDefault),
+		ConfigRoot:               getEnv("CONFIG_ROOT", configRootDefault),
+		RootfsRoot:               getEnv("ROOTFS_ROOT", rootfsRootDefault),
+		BuildRoot:                getEnv("BUILD_ROOT", buildRootDefault),
 		SessionMountTemplateRoot: getEnv("SESSION_MOUNT_TEMPLATE_ROOT", ""),
 		Engine:                   strings.TrimSpace(os.Getenv("ENGINE")),
 		DefaultCommandTimeout:    getEnvDuration("DEFAULT_COMMAND_TIMEOUT", 30*time.Second),
