@@ -9,12 +9,13 @@ ENV_EXAMPLE_FILE="$BUNDLE_ROOT/.env.example"
 ENV_FILE="${SERVICE_CONFIG_DIR:-$BUNDLE_ROOT}/.env"
 BACKEND_BIN="$BUNDLE_ROOT/backend/$APP_NAME"
 CONFIG_ENV_DIR="${SERVICE_CONFIG_DIR:-$BUNDLE_ROOT}/configs/environments"
-DATA_DIR="${ZENMIND_SERVICE_DATA_DIR:-$BUNDLE_ROOT/data}"
+DATA_DIR="${SERVICE_DATA_DIR:-$BUNDLE_ROOT/data}"
 ROOTFS_DIR="$DATA_DIR/rootfs"
 BUILD_DIR="$DATA_DIR/builds"
-RUN_DIR="$BUNDLE_ROOT/run"
+RUN_DIR="${SERVICE_STATE_DIR:-$BUNDLE_ROOT/run}"
+LOG_DIR="${SERVICE_LOG_DIR:-$RUN_DIR}"
 PID_FILE="$RUN_DIR/$APP_NAME.pid"
-LOG_FILE="$RUN_DIR/$APP_NAME.log"
+LOG_FILE="$LOG_DIR/$APP_NAME.log"
 
 program_die() {
   echo "[program] $*" >&2
@@ -34,8 +35,18 @@ program_require_dir() {
 program_validate_bundle() {
   program_require_file "$MANIFEST_FILE"
   program_require_file "$ENV_EXAMPLE_FILE"
-  program_require_dir "$CONFIG_ENV_DIR"
   [[ -x "$BACKEND_BIN" ]] || program_die "backend binary is not executable: $BACKEND_BIN"
+}
+
+program_initialize_config() {
+  mkdir -p "$(dirname "$ENV_FILE")" "$CONFIG_ENV_DIR"
+  if [[ ! -f "$ENV_FILE" ]]; then
+    cp "$ENV_EXAMPLE_FILE" "$ENV_FILE"
+  fi
+  local source_env_dir="$BUNDLE_ROOT/configs/environments"
+  if [[ -d "$source_env_dir" ]]; then
+    cp -R -n "$source_env_dir"/. "$CONFIG_ENV_DIR"/
+  fi
 }
 
 program_load_env() {
@@ -71,7 +82,7 @@ program_check_engine() {
 }
 
 program_prepare_runtime_dirs() {
-  mkdir -p "$DATA_DIR" "$ROOTFS_DIR" "$BUILD_DIR" "$RUN_DIR"
+  mkdir -p "$DATA_DIR" "$ROOTFS_DIR" "$BUILD_DIR" "$RUN_DIR" "$LOG_DIR"
 }
 
 program_read_pid() {

@@ -8,13 +8,14 @@ $Script:EnvExampleFile = Join-Path $Script:BundleRoot '.env.example'
 $Script:EnvFile = Join-Path $(if ($env:SERVICE_CONFIG_DIR) { $env:SERVICE_CONFIG_DIR } else { $Script:BundleRoot }) '.env'
 $Script:BackendBin = Join-Path (Join-Path $Script:BundleRoot 'backend') 'agent-container-hub.exe'
 $Script:ConfigEnvDir = Join-Path (Join-Path $(if ($env:SERVICE_CONFIG_DIR) { $env:SERVICE_CONFIG_DIR } else { $Script:BundleRoot }) 'configs') 'environments'
-$Script:DataDir = if ($env:ZENMIND_SERVICE_DATA_DIR) { $env:ZENMIND_SERVICE_DATA_DIR } else { Join-Path $Script:BundleRoot 'data' }
+$Script:DataDir = if ($env:SERVICE_DATA_DIR) { $env:SERVICE_DATA_DIR } else { Join-Path $Script:BundleRoot 'data' }
 $Script:RootfsDir = Join-Path $Script:DataDir 'rootfs'
 $Script:BuildDir = Join-Path $Script:DataDir 'builds'
-$Script:RunDir = Join-Path $Script:BundleRoot 'run'
+$Script:RunDir = if ($env:SERVICE_STATE_DIR) { $env:SERVICE_STATE_DIR } else { Join-Path $Script:BundleRoot 'run' }
+$Script:LogDir = if ($env:SERVICE_LOG_DIR) { $env:SERVICE_LOG_DIR } else { $Script:RunDir }
 $Script:PidFile = Join-Path $Script:RunDir 'agent-container-hub.pid'
-$Script:LogFile = Join-Path $Script:RunDir 'agent-container-hub.log'
-$Script:ErrorLogFile = Join-Path $Script:RunDir 'agent-container-hub.stderr.log'
+$Script:LogFile = Join-Path $Script:LogDir 'agent-container-hub.log'
+$Script:ErrorLogFile = Join-Path $Script:LogDir 'agent-container-hub.stderr.log'
 
 function Fail-Program([string]$Message) {
   throw "[program] $Message"
@@ -27,11 +28,19 @@ function Test-ProgramBundle {
   if (-not (Test-Path -LiteralPath $Script:EnvExampleFile -PathType Leaf)) {
     Fail-Program "required file not found: $Script:EnvExampleFile"
   }
-  if (-not (Test-Path -LiteralPath $Script:ConfigEnvDir -PathType Container)) {
-    Fail-Program "required directory not found: $Script:ConfigEnvDir"
-  }
   if (-not (Test-Path -LiteralPath $Script:BackendBin -PathType Leaf)) {
     Fail-Program "required file not found: $Script:BackendBin"
+  }
+}
+
+function Initialize-ProgramConfig {
+  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Script:EnvFile), $Script:ConfigEnvDir | Out-Null
+  if (-not (Test-Path -LiteralPath $Script:EnvFile -PathType Leaf)) {
+    Copy-Item -LiteralPath $Script:EnvExampleFile -Destination $Script:EnvFile
+  }
+  $sourceEnvDir = Join-Path (Join-Path $Script:BundleRoot 'configs') 'environments'
+  if (Test-Path -LiteralPath $sourceEnvDir -PathType Container) {
+    Copy-Item -Path (Join-Path $sourceEnvDir '*') -Destination $Script:ConfigEnvDir -Recurse -ErrorAction SilentlyContinue
   }
 }
 
@@ -104,7 +113,7 @@ function Test-ProgramEngine {
 }
 
 function Initialize-ProgramRuntime {
-  New-Item -ItemType Directory -Force -Path $Script:DataDir, $Script:RootfsDir, $Script:BuildDir, $Script:RunDir | Out-Null
+  New-Item -ItemType Directory -Force -Path $Script:DataDir, $Script:RootfsDir, $Script:BuildDir, $Script:RunDir, $Script:LogDir | Out-Null
 }
 
 function Clear-StaleProgramPid {

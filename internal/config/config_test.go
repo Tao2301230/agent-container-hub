@@ -111,7 +111,7 @@ func TestLoadUsesServiceConfigAndDataDirsForDefaults(t *testing.T) {
 	configDir := t.TempDir()
 	dataDir := t.TempDir()
 	t.Setenv("SERVICE_CONFIG_DIR", configDir)
-	t.Setenv("ZENMIND_SERVICE_DATA_DIR", dataDir)
+	t.Setenv("SERVICE_DATA_DIR", dataDir)
 	t.Setenv("CONFIG_ROOT", "")
 	t.Setenv("STATE_DB_PATH", "")
 	t.Setenv("ROOTFS_ROOT", "")

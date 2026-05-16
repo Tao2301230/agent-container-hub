@@ -36,7 +36,7 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("getwd: %w", err)
 	}
 	serviceConfigDir := strings.TrimSpace(os.Getenv("SERVICE_CONFIG_DIR"))
-	serviceDataDir := strings.TrimSpace(os.Getenv("ZENMIND_SERVICE_DATA_DIR"))
+	serviceDataDir := strings.TrimSpace(os.Getenv("SERVICE_DATA_DIR"))
 	configRootDefault := filepath.Join(cwd, "configs")
 	stateDBPathDefault := filepath.Join(cwd, "data", "hub.db")
 	rootfsRootDefault := filepath.Join(cwd, "data", "rootfs")
