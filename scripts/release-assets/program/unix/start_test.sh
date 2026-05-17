@@ -36,9 +36,12 @@ assert_contains() {
 
 make_bundle() {
   local bundle_dir="$1"
-  mkdir -p "$bundle_dir/backend" "$bundle_dir/bin" "$bundle_dir/configs/environments" "$bundle_dir/scripts"
+  mkdir -p "$bundle_dir/backend" "$bundle_dir/bin" "$bundle_dir/configs/environments/shell" "$bundle_dir/scripts"
   cat >"$bundle_dir/manifest.json" <<'EOF'
 {"id":"agent-container-hub"}
+EOF
+  cat >"$bundle_dir/configs/environments/shell/environment.yml" <<'EOF'
+name: shell
 EOF
   cat >"$bundle_dir/.env" <<'EOF'
 BIND_ADDR=127.0.0.1:11960
@@ -250,6 +253,49 @@ test_removed_local_engine_fails_fast() {
   assert_contains "$output" "ENGINE=""local has been removed; use auto, docker, or podman"
 }
 
+test_external_config_initialization_is_idempotent() {
+  local bundle_dir="$TMP_ROOT/external-config-idempotent"
+  local config_dir="$TMP_ROOT/external-config"
+  local data_dir="$TMP_ROOT/external-data"
+  local state_dir="$TMP_ROOT/external-state"
+  local log_dir="$TMP_ROOT/external-logs"
+  make_bundle "$bundle_dir"
+  make_fake_engine "$bundle_dir"
+  mkdir -p "$config_dir/configs/environments/shell"
+  cat >"$config_dir/.env" <<'EOF'
+BIND_ADDR=127.0.0.1:11960
+ENGINE=docker
+EOF
+  cat >"$config_dir/configs/environments/shell/environment.yml" <<'EOF'
+name: custom-shell
+EOF
+
+  local output
+  output="$(
+    cd "$bundle_dir" &&
+      SERVICE_CONFIG_DIR="$config_dir" \
+      SERVICE_DATA_DIR="$data_dir" \
+      SERVICE_STATE_DIR="$state_dir" \
+      SERVICE_LOG_DIR="$log_dir" \
+      PATH="$bundle_dir/bin:$SAFE_PATH" \
+      /bin/bash ./start.sh --daemon 2>&1
+  )"
+  assert_contains "$output" "started agent-container-hub in daemon mode"
+  assert_contains "$(cat "$config_dir/configs/environments/shell/environment.yml")" "custom-shell"
+  [[ -d "$data_dir/rootfs" ]] || { echo "expected external rootfs dir to be created" >&2; exit 1; }
+  [[ -f "$state_dir/agent-container-hub.pid" ]] || { echo "expected external pid file to be created" >&2; exit 1; }
+  [[ -f "$log_dir/agent-container-hub.log" ]] || { echo "expected external log file to be created" >&2; exit 1; }
+
+  output="$(
+    cd "$bundle_dir" &&
+      SERVICE_STATE_DIR="$state_dir" \
+      SERVICE_LOG_DIR="$log_dir" \
+      PATH="$bundle_dir/bin:$SAFE_PATH" \
+      /bin/bash ./stop.sh 2>&1
+  )"
+  assert_contains "$output" "stopped agent-container-hub"
+}
+
 test_missing_env_fails_fast
 test_explicit_engine_creates_runtime_dirs_and_stops_cleanly
 test_invalid_pid_file_is_treated_as_stale
@@ -258,5 +304,6 @@ test_auto_detect_succeeds_with_fake_engine
 test_auto_alias_succeeds_with_fake_engine
 test_invalid_explicit_engine_fails_fast
 test_removed_local_engine_fails_fast
+test_external_config_initialization_is_idempotent
 
 echo "start.sh tests passed"

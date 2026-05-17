@@ -40,7 +40,12 @@ function Initialize-ProgramConfig {
   }
   $sourceEnvDir = Join-Path (Join-Path $Script:BundleRoot 'configs') 'environments'
   if (Test-Path -LiteralPath $sourceEnvDir -PathType Container) {
-    Copy-Item -Path (Join-Path $sourceEnvDir '*') -Destination $Script:ConfigEnvDir -Recurse -ErrorAction SilentlyContinue
+    Get-ChildItem -LiteralPath $sourceEnvDir -Force | ForEach-Object {
+      $target = Join-Path $Script:ConfigEnvDir $_.Name
+      if (-not (Test-Path -LiteralPath $target)) {
+        Copy-Item -LiteralPath $_.FullName -Destination $target -Recurse
+      }
+    }
   }
 }
 

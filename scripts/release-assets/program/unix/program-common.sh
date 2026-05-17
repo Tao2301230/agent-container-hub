@@ -45,7 +45,14 @@ program_initialize_config() {
   fi
   local source_env_dir="$BUNDLE_ROOT/configs/environments"
   if [[ -d "$source_env_dir" ]]; then
-    cp -R -n "$source_env_dir"/. "$CONFIG_ENV_DIR"/
+    local entry
+    for entry in "$source_env_dir"/*; do
+      [[ -e "$entry" ]] || continue
+      local target="$CONFIG_ENV_DIR/$(basename "$entry")"
+      if [[ ! -e "$target" ]]; then
+        cp -R "$entry" "$target"
+      fi
+    done
   fi
 }
 
