@@ -1540,7 +1540,7 @@ func TestBuiltinShellEnvironmentUsesRecommendedCNMirror(t *testing.T) {
 	}
 
 	makefile := doJSON[api.EnvironmentFileResponse](t, handler, http.MethodGet, "/api/environments/shell/files/Makefile", nil, http.StatusOK, "")
-	if !strings.Contains(makefile.Content, "CN_BASE_IMAGE ?= docker.1ms.run/library/busybox:1.37.0") {
+	if !strings.Contains(makefile.Content, "CN_BASE_IMAGE ?= m.daocloud.io/docker.io/library/busybox:1.37.0") {
 		t.Fatalf("shell Makefile = %q, want current recommended CN_BASE_IMAGE", makefile.Content)
 	}
 }
