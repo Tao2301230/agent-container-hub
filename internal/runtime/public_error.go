@@ -7,7 +7,10 @@ import (
 	"strings"
 )
 
-var unableToFindImagePattern = regexp.MustCompile(`(?i)unable to find image ['"]?([^'"\s]+)['"]? locally`)
+var (
+	unableToFindImagePattern = regexp.MustCompile(`(?i)unable to find image ['"]?([^'"\s]+)['"]? locally`)
+	registryLookupPattern    = regexp.MustCompile(`(?i)\blookup\s+([a-z0-9.-]+\.[a-z]{2,})\b[^:]*:\s*(temporary failure in name resolution|no such host|server misbehaving)`)
+)
 
 type commandFailure struct {
 	detail        string
@@ -69,7 +72,22 @@ func classifyCommandPublicMessage(image string, result commandResult) string {
 	if detail == "" {
 		return ""
 	}
+	if message := classifyRegistryNetworkMessage(detail); message != "" {
+		return message
+	}
 	return classifyImageNotFoundMessage(image, detail)
+}
+
+func classifyRegistryNetworkMessage(detail string) string {
+	matches := registryLookupPattern.FindStringSubmatch(detail)
+	if len(matches) < 2 {
+		return ""
+	}
+	registry := strings.TrimSpace(matches[1])
+	if registry == "" {
+		return "container registry DNS lookup failed; check Docker/Podman VM DNS settings"
+	}
+	return fmt.Sprintf("container registry %q DNS lookup failed; check Docker/Podman VM DNS settings", registry)
 }
 
 func classifyImageNotFoundMessage(image, detail string) string {

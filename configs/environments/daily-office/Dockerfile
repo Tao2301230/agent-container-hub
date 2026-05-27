@@ -84,6 +84,7 @@ RUN set -euo pipefail; \
         gcc \
         g++ \
         git \
+        gnu-which \
         grep \
         gzip \
         iputils-ping \
@@ -108,7 +109,6 @@ RUN set -euo pipefail; \
         unzip \
         vim-tiny \
         wget \
-        which \
         xz-utils \
         zip \
     && rm -rf /var/lib/apt/lists/*

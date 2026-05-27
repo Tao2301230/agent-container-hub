@@ -1485,6 +1485,12 @@ func TestBuiltinDailyOfficeEnvironmentIsListed(t *testing.T) {
 	if bytes.Contains([]byte(dailyOffice.Build.Dockerfile), []byte("ENTRYPOINT")) {
 		t.Fatalf("daily-office Dockerfile unexpectedly contains ENTRYPOINT")
 	}
+	if bytes.Contains([]byte(dailyOffice.Build.Dockerfile), []byte("\n        which \\")) {
+		t.Fatalf("daily-office Dockerfile installs Debian package %q; use gnu-which instead", "which")
+	}
+	if !bytes.Contains([]byte(dailyOffice.Build.Dockerfile), []byte("\n        gnu-which \\")) {
+		t.Fatalf("daily-office Dockerfile should install Debian package %q", "gnu-which")
+	}
 	if len(dailyOffice.Build.SmokeArgs) == 0 {
 		t.Fatalf("daily-office smoke args = %+v, want cli/python/node checks", dailyOffice.Build.SmokeArgs)
 	}
@@ -1599,8 +1605,11 @@ func TestBuiltinDailyOfficeProEnvironmentIsListed(t *testing.T) {
 	if bytes.Contains([]byte(dailyOfficePro.Build.Dockerfile), []byte("ENTRYPOINT")) {
 		t.Fatalf("daily-office-pro Dockerfile unexpectedly contains ENTRYPOINT")
 	}
-	if dailyOfficePro.Build.BuildContexts["minimax_skills"] != "../../../../zenmind-env/skills-market" {
+	if len(dailyOfficePro.Build.BuildContexts) != 0 {
 		t.Fatalf("daily-office-pro build contexts = %+v", dailyOfficePro.Build.BuildContexts)
+	}
+	if bytes.Contains([]byte(dailyOfficePro.Build.Dockerfile), []byte("from=minimax_skills")) {
+		t.Fatalf("daily-office-pro Dockerfile should not require the minimax_skills build context")
 	}
 	if len(dailyOfficePro.Build.SmokeArgs) == 0 {
 		t.Fatalf("daily-office-pro smoke args = %+v, want cli/python/node checks", dailyOfficePro.Build.SmokeArgs)

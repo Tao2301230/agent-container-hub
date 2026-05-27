@@ -18,20 +18,18 @@ ENV DEBIAN_FRONTEND=noninteractive \
     TOOLBOX_HOME=/opt/toolbox \
     PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-
-RUN set -euo pipefail; \
+RUN set -eu; \
     apt_mirror="${APT_MIRROR}"; \
     apt_security_mirror="${APT_SECURITY_MIRROR:-${APT_MIRROR}}"; \
-    if [[ -z "${apt_mirror}" ]]; then \
+    if [ -z "${apt_mirror}" ]; then \
         apt_mirror="https://deb.debian.org/debian"; \
     fi; \
-    if [[ -z "${apt_security_mirror}" ]]; then \
+    if [ -z "${apt_security_mirror}" ]; then \
         apt_security_mirror="https://security.debian.org/debian-security"; \
     fi; \
     apt_mirror="${apt_mirror%/}"; \
     apt_security_mirror="${apt_security_mirror%/}"; \
-    if [[ -f /etc/apt/sources.list ]]; then \
+    if [ -f /etc/apt/sources.list ]; then \
         sed -i \
             -e "s|http://deb.debian.org/debian|${apt_mirror}|g" \
             -e "s|https://deb.debian.org/debian|${apt_mirror}|g" \
@@ -41,18 +39,16 @@ RUN set -euo pipefail; \
             -e "s|https://deb.debian.org/debian-security|${apt_security_mirror}|g" \
             /etc/apt/sources.list; \
     fi; \
-    if compgen -G "/etc/apt/sources.list.d/*.sources" > /dev/null; then \
-        while IFS= read -r source_file; do \
-            sed -i \
-                -e "s|http://deb.debian.org/debian|${apt_mirror}|g" \
-                -e "s|https://deb.debian.org/debian|${apt_mirror}|g" \
-                -e "s|http://security.debian.org/debian-security|${apt_security_mirror}|g" \
-                -e "s|https://security.debian.org/debian-security|${apt_security_mirror}|g" \
-                -e "s|http://deb.debian.org/debian-security|${apt_security_mirror}|g" \
-                -e "s|https://deb.debian.org/debian-security|${apt_security_mirror}|g" \
-                "${source_file}"; \
-        done < <(find /etc/apt/sources.list.d -maxdepth 1 -type f -name '*.sources' | sort); \
-    fi; \
+    find /etc/apt/sources.list.d -maxdepth 1 -type f -name '*.sources' | sort | while IFS= read -r source_file; do \
+        sed -i \
+            -e "s|http://deb.debian.org/debian|${apt_mirror}|g" \
+            -e "s|https://deb.debian.org/debian|${apt_mirror}|g" \
+            -e "s|http://security.debian.org/debian-security|${apt_security_mirror}|g" \
+            -e "s|https://security.debian.org/debian-security|${apt_security_mirror}|g" \
+            -e "s|http://deb.debian.org/debian-security|${apt_security_mirror}|g" \
+            -e "s|https://deb.debian.org/debian-security|${apt_security_mirror}|g" \
+            "${source_file}"; \
+    done; \
     apt-get \
         -o Acquire::Retries="${APT_RETRIES}" \
         -o Acquire::http::Timeout="${APT_TIMEOUT}" \
@@ -73,7 +69,7 @@ RUN set -euo pipefail; \
         tar \
     && rm -rf /var/lib/apt/lists/*
 
-RUN set -euo pipefail; \
+RUN set -eu; \
     arch="$(dpkg --print-architecture)"; \
     case "${arch}" in \
         amd64) \
@@ -89,16 +85,15 @@ RUN set -euo pipefail; \
         *) echo "Unsupported architecture: ${arch}" >&2; exit 1 ;; \
     esac; \
     install_cli() { \
-        local cli_name="$1"; \
-        local asset_url="$2"; \
-        local tmpdir archive bin_path; \
+        cli_name="$1"; \
+        asset_url="$2"; \
         tmpdir="$(mktemp -d)"; \
         archive="${tmpdir}/$(basename "${asset_url%%\?*}")"; \
         curl -fsSL "${asset_url}" -o "${archive}"; \
         mkdir -p "${tmpdir}/unpacked"; \
         CLI_NAME="${cli_name}" ARCHIVE_PATH="${archive}" EXTRACT_DIR="${tmpdir}/unpacked" python -c 'import os, pathlib, shutil, tarfile, zipfile; archive = pathlib.Path(os.environ["ARCHIVE_PATH"]); extract_dir = pathlib.Path(os.environ["EXTRACT_DIR"]); cli_name = os.environ["CLI_NAME"]; name = archive.name.lower(); handler = "zip" if name.endswith(".zip") else "tar" if name.endswith((".tgz", ".tar.gz")) else None; assert handler, f"Unsupported archive format for {cli_name}: {archive}"; zf = zipfile.ZipFile(archive) if handler == "zip" else None; tf = tarfile.open(archive) if handler == "tar" else None; zf.extractall(extract_dir) if zf else None; tf.extractall(extract_dir, filter="fully_trusted") if tf else None; zf.close() if zf else None; tf.close() if tf else None; matches = [path for path in extract_dir.rglob(cli_name) if path.is_file() and os.access(path, os.X_OK)]; assert matches, f"Failed to locate the {cli_name} binary in {archive}"; shutil.copy2(matches[0], extract_dir / ".selected-binary")'; \
         bin_path="${tmpdir}/unpacked/.selected-binary"; \
-        if [[ -z "${bin_path}" ]]; then \
+        if [ -z "${bin_path}" ]; then \
             echo "Failed to locate the ${cli_name} binary in ${archive}" >&2; \
             exit 1; \
         fi; \

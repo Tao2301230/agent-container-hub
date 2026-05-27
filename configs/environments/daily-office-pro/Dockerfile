@@ -156,25 +156,6 @@ RUN set -euo pipefail; \
         react-icons@^5.4.0 \
         sharp@^0.33.5
 
-RUN --mount=type=bind,from=minimax_skills,source=minimax-docx,target=/tmp/minimax-docx,ro \
-    set -euo pipefail; \
-    workdir="$(mktemp -d)"; \
-    cp -R /tmp/minimax-docx/. "${workdir}/"; \
-    dotnet restore "${workdir}/scripts/dotnet/MiniMaxAIDocx.slnx" --packages "${NUGET_PACKAGES}" --verbosity quiet; \
-    dotnet build "${workdir}/scripts/dotnet/MiniMaxAIDocx.slnx" --configuration Release --no-restore --verbosity quiet; \
-    rm -rf "${workdir}"
-
-RUN --mount=type=bind,from=minimax_skills,source=minimax-pdf,target=/tmp/minimax-pdf,ro \
-    --mount=type=bind,from=minimax_skills,source=minimax-xlsx,target=/tmp/minimax-xlsx,ro \
-    set -euo pipefail; \
-    cd /tmp/minimax-pdf; \
-    bash scripts/make.sh check; \
-    tmp_pyc="$(mktemp)"; \
-    python3 -c 'import py_compile, sys; py_compile.compile(sys.argv[1], cfile=sys.argv[2], doraise=True)' \
-        /tmp/minimax-xlsx/scripts/formula_check.py "${tmp_pyc}"; \
-    rm -f "${tmp_pyc}"; \
-    python3 /tmp/minimax-xlsx/scripts/libreoffice_recalc.py --check >/dev/null
-
 RUN set -euo pipefail; \
     arch="$(dpkg --print-architecture)"; \
     case "${arch}" in \

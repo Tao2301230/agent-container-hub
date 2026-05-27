@@ -81,9 +81,7 @@ default_execute:
       ls /skills/ 2>/dev/null || echo '/skills not mounted'
   timeout_ms: 30000
 build:
-  contexts:
-    minimax_skills: ../../../../zenmind-env/skills-market
-  notes: Runtime MiniMax skills can be mounted to /skills as read-only content when a session explicitly adds that mount, for example /Users/linlay-macmini/Project/minimax-skills -> /skills. The image prewarms the `minimax-docx` NuGet cache from the named `minimax_skills` build context and runs build-time compatibility checks against the mounted `minimax-pdf` and `minimax-xlsx` entrypoints.
+  notes: Runtime MiniMax skills can be mounted to /skills as read-only content when a session explicitly adds that mount, for example /Users/linlay-macmini/Project/minimax-skills -> /skills. The image does not require a local MiniMax skills checkout at build time, so built-in environment builds work in packaged desktop installations.
   smoke_command: /bin/bash
   smoke_args:
     - -lc

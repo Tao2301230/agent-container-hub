@@ -134,7 +134,7 @@ func (s *BuildService) StartBuildJob(ctx context.Context, name string, req model
 	}
 	s.registerActiveJob(active)
 
-	if useMake {
+	if useMake && (target != BuildTargetDefault || makeCommandAvailable()) {
 		go s.runMakeBuildJob(s.newBuildJobContext(), active, environment.Clone(), s.environmentConfigDir(environment.Name), target, buildContexts)
 		return job.Clone(), nil
 	}
@@ -568,9 +568,17 @@ func (s *BuildService) environmentConfigDir(name string) string {
 
 func (s *BuildService) runMakeBuild(ctx context.Context, environment *model.Environment, workingDir, target string, buildContexts map[string]string, outputSink io.Writer) (runtime.BuildResult, error) {
 	startedAt := time.Now().UTC()
-	cmd := exec.CommandContext(ctx, "make", target)
+	makePath, lookupErr := exec.LookPath("make")
+	if lookupErr != nil {
+		finishedAt := time.Now().UTC()
+		return runtime.BuildResult{
+			StartedAt:  startedAt,
+			FinishedAt: finishedAt,
+		}, fmt.Errorf("run make %s: make is required for this build target but was not found in PATH", target)
+	}
+	cmd := exec.CommandContext(ctx, makePath, target)
 	cmd.Dir = workingDir
-	cmd.Env = buildCommandEnv(environment, buildContexts)
+	cmd.Env = buildCommandEnv(environment, buildContexts, s.runtime.Name())
 
 	var output bytes.Buffer
 	writer := io.MultiWriter(&output, outputSink)
@@ -590,10 +598,15 @@ func (s *BuildService) runMakeBuild(ctx context.Context, environment *model.Envi
 	return result, nil
 }
 
-func buildCommandEnv(environment *model.Environment, buildContexts map[string]string) []string {
+func buildCommandEnv(environment *model.Environment, buildContexts map[string]string, containerEngine string) []string {
 	env := append([]string(nil), os.Environ()...)
 	env = append(env, "IMAGE_NAME="+strings.TrimSpace(environment.ImageRepository))
 	env = append(env, "TAG="+strings.TrimSpace(environment.ImageTag))
+	containerEngine = strings.TrimSpace(containerEngine)
+	if containerEngine == "" {
+		containerEngine = "docker"
+	}
+	env = append(env, "CONTAINER_ENGINE="+containerEngine)
 	for key, value := range environment.Build.BuildArgs {
 		env = append(env, key+"="+value)
 	}
@@ -604,6 +617,11 @@ func buildCommandEnv(environment *model.Environment, buildContexts map[string]st
 		}
 	}
 	return env
+}
+
+func makeCommandAvailable() bool {
+	_, err := exec.LookPath("make")
+	return err == nil
 }
 
 func (s *BuildService) resolveBuildContexts(environment *model.Environment) (map[string]string, error) {

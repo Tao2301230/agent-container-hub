@@ -2439,6 +2439,7 @@ func TestStartBuildJobReturnsImmediatelyAndTracksActiveStatus(t *testing.T) {
 func TestStartBuildJobWithExplicitTargetUsesMakefile(t *testing.T) {
 	services, cleanup, fake := newTestServices(t)
 	defer cleanup()
+	fake.name = "podman"
 
 	if _, err := services.environments.Upsert(context.Background(), api.UpsertEnvironmentRequest{
 		Name:            "python",
@@ -2454,7 +2455,7 @@ func TestStartBuildJobWithExplicitTargetUsesMakefile(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Upsert() error = %v", err)
 	}
-	if _, err := services.environments.PutFile(context.Background(), "python", "Makefile", ".PHONY: build build-cn\nbuild:\n\t@echo standard\nbuild-cn:\n\t@echo cn\n"); err != nil {
+	if _, err := services.environments.PutFile(context.Background(), "python", "Makefile", ".PHONY: build build-cn\nbuild:\n\t@echo standard\nbuild-cn:\n\t@echo target=build-cn\n\t@echo IMAGE_NAME=$(IMAGE_NAME)\n\t@echo TAG=$(TAG)\n\t@echo CONTAINER_ENGINE=$(CONTAINER_ENGINE)\n\t@echo NPM_REGISTRY=$(NPM_REGISTRY)\n"); err != nil {
 		t.Fatalf("PutFile(Makefile) error = %v", err)
 	}
 
@@ -2467,6 +2468,7 @@ func TestStartBuildJobWithExplicitTargetUsesMakefile(t *testing.T) {
 		"printf 'target=%s\\n' \"$1\"\n" +
 		"printf 'IMAGE_NAME=%s\\n' \"$IMAGE_NAME\"\n" +
 		"printf 'TAG=%s\\n' \"$TAG\"\n" +
+		"printf 'CONTAINER_ENGINE=%s\\n' \"$CONTAINER_ENGINE\"\n" +
 		"printf 'NPM_REGISTRY=%s\\n' \"$NPM_REGISTRY\"\n"
 	if err := os.WriteFile(makePath, []byte(makeScript), 0o755); err != nil {
 		t.Fatalf("WriteFile(make) error = %v", err)
@@ -2499,7 +2501,7 @@ func TestStartBuildJobWithExplicitTargetUsesMakefile(t *testing.T) {
 	if persisted.Target != BuildTargetCN {
 		t.Fatalf("persisted.Target = %q, want %q", persisted.Target, BuildTargetCN)
 	}
-	if !strings.Contains(persisted.Output, "target=build-cn") || !strings.Contains(persisted.Output, "IMAGE_NAME=python-custom") || !strings.Contains(persisted.Output, "TAG=3.11-cn") || !strings.Contains(persisted.Output, "NPM_REGISTRY=https://registry.npmmirror.com") {
+	if !strings.Contains(persisted.Output, "target=build-cn") || !strings.Contains(persisted.Output, "IMAGE_NAME=python-custom") || !strings.Contains(persisted.Output, "TAG=3.11-cn") || !strings.Contains(persisted.Output, "CONTAINER_ENGINE=podman") || !strings.Contains(persisted.Output, "NPM_REGISTRY=https://registry.npmmirror.com") {
 		t.Fatalf("persisted.Output = %q, want make output with env overrides", persisted.Output)
 	}
 	if fake.lastBuild.Image != "" {
@@ -2527,7 +2529,7 @@ func TestToolboxBuildWithExplicitTargetUsesMakefileArgs(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Upsert() error = %v", err)
 	}
-	if _, err := services.environments.PutFile(context.Background(), "toolbox", "Makefile", ".PHONY: build build-cn\nbuild:\n\t@echo standard\nbuild-cn:\n\t@echo cn\n"); err != nil {
+	if _, err := services.environments.PutFile(context.Background(), "toolbox", "Makefile", ".PHONY: build build-cn\nbuild:\n\t@echo standard\nbuild-cn:\n\t@echo target=build-cn\n\t@echo IMAGE_NAME=$(IMAGE_NAME)\n\t@echo TAG=$(TAG)\n\t@echo DBX_DOWNLOAD_URL=$(DBX_DOWNLOAD_URL)\n\t@echo HTTPX_DOWNLOAD_URL=$(HTTPX_DOWNLOAD_URL)\n\t@echo MOCK_DOWNLOAD_URL=$(MOCK_DOWNLOAD_URL)\n"); err != nil {
 		t.Fatalf("PutFile(Makefile) error = %v", err)
 	}
 

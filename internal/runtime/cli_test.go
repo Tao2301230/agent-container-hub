@@ -306,8 +306,11 @@ func TestNewAutoProviderTreatsAutoAsAutoDetect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
-	if !strings.Contains(string(logData), "info --format {{.ServerVersion}}") {
+	if !strings.Contains(string(logData), "info") {
 		t.Fatalf("log = %q, want engine probe call", string(logData))
+	}
+	if strings.Contains(string(logData), "--format {{.ServerVersion}}") {
+		t.Fatalf("log = %q, engine probe should not use Docker-specific ServerVersion template", string(logData))
 	}
 }
 

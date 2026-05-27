@@ -1,6 +1,7 @@
 IMAGE_NAME ?= shell
 TAG ?= latest
-BASE_IMAGE ?= m.daocloud.io/docker.io/library/busybox:latest
+CONTAINER_ENGINE ?= docker
+BASE_IMAGE ?= busybox:latest
 CN_BASE_IMAGE ?= m.daocloud.io/docker.io/library/busybox:1.37.0
 
 .PHONY: build build-cn
@@ -9,14 +10,14 @@ CN_BASE_IMAGE ?= m.daocloud.io/docker.io/library/busybox:1.37.0
 #   make build-cn  # override CN_BASE_IMAGE=... if your preferred mirror differs
 
 build:
-	docker build \
+	$(CONTAINER_ENGINE) build \
 		--tag $(IMAGE_NAME):$(TAG) \
 		--build-arg BASE_IMAGE=$(BASE_IMAGE) \
 		-f Dockerfile \
 		.
 
 build-cn:
-	docker build \
+	$(CONTAINER_ENGINE) build \
 		--tag $(IMAGE_NAME):$(TAG) \
 		--build-arg BASE_IMAGE=$(CN_BASE_IMAGE) \
 		-f Dockerfile \

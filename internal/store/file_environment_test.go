@@ -254,6 +254,11 @@ func TestRepoToolboxEnvironmentConfigLoads(t *testing.T) {
 	if !strings.Contains(environment.Build.Dockerfile, "install_cli \"mock\"") {
 		t.Fatalf("Build.Dockerfile = %q, want mock install", environment.Build.Dockerfile)
 	}
+	for _, bashOnly := range []string{"pipefail", "[[", "< <("} {
+		if strings.Contains(environment.Build.Dockerfile, bashOnly) {
+			t.Fatalf("Build.Dockerfile contains bash-only syntax %q; toolbox must build when Podman ignores SHELL for OCI images", bashOnly)
+		}
+	}
 
 	files, err := store.ListEnvironmentFiles(context.Background(), "toolbox")
 	if err != nil {
@@ -291,8 +296,18 @@ func TestRepoDailyOfficeProEnvironmentConfigLoadsBuildContexts(t *testing.T) {
 	if environment.DefaultEnv["NUGET_PACKAGES"] != "/opt/daily-office-pro/nuget/packages" {
 		t.Fatalf("NUGET_PACKAGES = %q", environment.DefaultEnv["NUGET_PACKAGES"])
 	}
-	if environment.Build.BuildContexts["minimax_skills"] != "../../../../zenmind-env/skills-market" {
+	if len(environment.Build.BuildContexts) != 0 {
 		t.Fatalf("Build.BuildContexts = %+v", environment.Build.BuildContexts)
+	}
+	if strings.Contains(environment.Build.Dockerfile, "from=minimax_skills") {
+		t.Fatalf("Build.Dockerfile should not require the minimax_skills build context")
+	}
+	makefile, err := store.ReadEnvironmentFile(context.Background(), "daily-office-pro", "Makefile")
+	if err != nil {
+		t.Fatalf("ReadEnvironmentFile(Makefile) error = %v", err)
+	}
+	if strings.Contains(string(makefile.Content), "minimax_skills") || strings.Contains(string(makefile.Content), "BUILD_CONTEXT_MINIMAX_SKILLS") {
+		t.Fatalf("Makefile should not require the minimax_skills build context: %q", makefile.Content)
 	}
 }
 

@@ -95,7 +95,7 @@ func pingEngine(ctx context.Context, binary string, logger *slog.Logger) error {
 	probeCtx, cancel := context.WithTimeout(ctx, engineProbeTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(probeCtx, binary, "info", "--format", "{{.ServerVersion}}")
+	cmd := exec.CommandContext(probeCtx, binary, "info")
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
