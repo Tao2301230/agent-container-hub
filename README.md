@@ -466,7 +466,7 @@ cd configs/environments/toolbox && make build-cn
 /Users/linlay-macmini/Project/minimax-skills -> /skills
 ```
 
-其中 `daily-office-pro` 采用 MiniMax skill 目录结构，例如 `/skills/skills/minimax-pdf`、`/skills/skills/minimax-xlsx`、`/skills/skills/minimax-docx`、`/skills/skills/pptx-generator` 与 `/skills/plugins/pptx-plugin/skills/...`。
+其中 `daily-office-pro` 采用 MiniMax skill 目录结构，例如 `/skills/minimax-pdf`、`/skills/minimax-xlsx`、`/skills/minimax-docx`、`/skills/pptx-generator` 与 `/skills/plugins/pptx-plugin/skills/...`。
 
 `daily-office-pro` 对外要求是 `.NET SDK 8+`。在 Apple Silicon / arm64 上，默认会安装 Microsoft Debian 12 源里该架构可用的 SDK 包，因此不保证包名仍然是 `dotnet-sdk-8.0`；如需强制指定，可在构建时传入 `DOTNET_SDK_PACKAGE=...`。
 
@@ -542,7 +542,7 @@ mounts:
     read_only: true
 default_env:
   NODE_PATH: /opt/daily-office-pro/node_modules
-  PATH: /opt/daily-office-pro/node_modules/.bin:/skills/skills/minimax-pdf/scripts:/skills/skills/minimax-xlsx/scripts:/skills/skills/minimax-docx/scripts:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+  PATH: /opt/daily-office-pro/node_modules/.bin:/skills/minimax-pdf/scripts:/skills/minimax-xlsx/scripts:/skills/minimax-docx/scripts:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 build:
   dockerfile: |
     FROM python:3.12-slim-bookworm

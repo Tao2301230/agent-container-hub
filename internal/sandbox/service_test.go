@@ -1559,7 +1559,7 @@ func TestDailyOfficeProSessionAllowsExplicitSkillsMount(t *testing.T) {
 		t.Fatalf("MkdirAll(skillsRoot) error = %v", err)
 	}
 
-	expectedPath := "/opt/daily-office-pro/node_modules/.bin:/skills/skills/minimax-pdf/scripts:/skills/skills/minimax-xlsx/scripts:/skills/skills/minimax-docx/scripts:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+	expectedPath := "/opt/daily-office-pro/node_modules/.bin:/skills/minimax-pdf/scripts:/skills/minimax-xlsx/scripts:/skills/minimax-docx/scripts:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 	if _, err := services.environments.Upsert(context.Background(), api.UpsertEnvironmentRequest{
 		Name:            "daily-office-pro",
 		ImageRepository: "daily-office-pro",

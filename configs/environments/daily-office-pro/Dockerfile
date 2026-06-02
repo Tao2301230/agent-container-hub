@@ -25,7 +25,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     DAILY_OFFICE_HOME=/opt/daily-office-pro \
     NUGET_PACKAGES=/opt/daily-office-pro/nuget/packages \
     NODE_PATH=/opt/daily-office-pro/node_modules \
-    PATH=/opt/daily-office-pro/node_modules/.bin:/skills/skills/minimax-pdf/scripts:/skills/skills/minimax-xlsx/scripts:/skills/skills/minimax-docx/scripts:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    PATH=/opt/daily-office-pro/node_modules/.bin:/skills/minimax-pdf/scripts:/skills/minimax-xlsx/scripts:/skills/minimax-docx/scripts:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 

@@ -9,18 +9,17 @@ default_env:
   NUGET_PACKAGES: /opt/daily-office-pro/nuget/packages
   PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
   PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: /usr/bin/chromium
-  PATH: /opt/daily-office-pro/node_modules/.bin:/skills/skills/minimax-pdf/scripts:/skills/skills/minimax-xlsx/scripts:/skills/skills/minimax-docx/scripts:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+  PATH: /opt/daily-office-pro/node_modules/.bin:/skills/minimax-pdf/scripts:/skills/minimax-xlsx/scripts:/skills/minimax-docx/scripts:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 agent_prompt: |
   You are running inside the `daily-office-pro` environment.
 
   This environment is designed for MiniMax office skills mounted under `/skills`.
 
   MiniMax skill layout:
-  - PDF skill: `/skills/skills/minimax-pdf`
-  - XLSX skill: `/skills/skills/minimax-xlsx`
-  - DOCX skill: `/skills/skills/minimax-docx`
-  - PPT generator: `/skills/skills/pptx-generator`
-  - PPT design/orchestration skills: `/skills/plugins/pptx-plugin/skills/...`
+  - PDF skill: `/skills/minimax-pdf`
+  - XLSX skill: `/skills/minimax-xlsx`
+  - DOCX skill: `/skills/minimax-docx`
+  - PPT generator: `/skills/pptx-generator`
 
   Important environment rules:
   - Do not assume the legacy office layout exists under `/skills/docx`, `/skills/pdf`, `/skills/xlsx`, or `/skills/pptx`.
