@@ -1591,9 +1591,9 @@ func TestBuiltinDailyOfficeProEnvironmentIsListed(t *testing.T) {
 		t.Fatalf("daily-office-pro NUGET_PACKAGES = %q", dailyOfficePro.DefaultEnv["NUGET_PACKAGES"])
 	}
 	for _, expected := range []string{
-		"/skills/skills/minimax-pdf/scripts",
-		"/skills/skills/minimax-xlsx/scripts",
-		"/skills/skills/minimax-docx/scripts",
+		"/skills/minimax-pdf/scripts",
+		"/skills/minimax-xlsx/scripts",
+		"/skills/minimax-docx/scripts",
 	} {
 		if !bytes.Contains([]byte(dailyOfficePro.DefaultEnv["PATH"]), []byte(expected)) {
 			t.Fatalf("daily-office-pro PATH = %q, want %s", dailyOfficePro.DefaultEnv["PATH"], expected)
@@ -1629,7 +1629,7 @@ func TestBuiltinDailyOfficeProEnvironmentIsListed(t *testing.T) {
 			t.Fatalf("daily-office-pro smoke args = %+v, want %q", dailyOfficePro.Build.SmokeArgs, expected)
 		}
 	}
-	if !strings.Contains(dailyOfficePro.AgentPrompt, "daily-office-pro") || !strings.Contains(dailyOfficePro.AgentPrompt, "/skills/skills/minimax-pdf") {
+	if !strings.Contains(dailyOfficePro.AgentPrompt, "daily-office-pro") || !strings.Contains(dailyOfficePro.AgentPrompt, "/skills/minimax-pdf") {
 		t.Fatalf("daily-office-pro AgentPrompt = %q, want MiniMax guidance", dailyOfficePro.AgentPrompt)
 	}
 
