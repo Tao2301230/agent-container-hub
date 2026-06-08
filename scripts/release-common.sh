@@ -315,7 +315,11 @@ ${required_paths_json}
     "autoStart": "optional",
     "assetFileName": "$asset_file_name",
     "bundleTopLevelDir": "$APP_NAME",
-    "systemRequirements": ["docker|podman"]
+    "systemRequirements": ["docker|podman"],
+    "capabilities": {
+      "provides": [],
+      "requires": []
+    }
   }
 }
 EOF
