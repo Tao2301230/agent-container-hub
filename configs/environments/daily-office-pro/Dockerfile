@@ -29,18 +29,18 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-RUN set -euo pipefail; \
+RUN set -eu; \
     apt_mirror="${APT_MIRROR}"; \
     apt_security_mirror="${APT_SECURITY_MIRROR:-${APT_MIRROR}}"; \
-    if [[ -z "${apt_mirror}" ]]; then \
+    if [ -z "${apt_mirror}" ]; then \
         apt_mirror="https://deb.debian.org/debian"; \
     fi; \
-    if [[ -z "${apt_security_mirror}" ]]; then \
+    if [ -z "${apt_security_mirror}" ]; then \
         apt_security_mirror="https://security.debian.org/debian-security"; \
     fi; \
     apt_mirror="${apt_mirror%/}"; \
     apt_security_mirror="${apt_security_mirror%/}"; \
-    if [[ -f /etc/apt/sources.list ]]; then \
+    if [ -f /etc/apt/sources.list ]; then \
         sed -i \
             -e "s|http://deb.debian.org/debian|${apt_mirror}|g" \
             -e "s|https://deb.debian.org/debian|${apt_mirror}|g" \
@@ -50,8 +50,9 @@ RUN set -euo pipefail; \
             -e "s|https://deb.debian.org/debian-security|${apt_security_mirror}|g" \
             /etc/apt/sources.list; \
     fi; \
-    if compgen -G "/etc/apt/sources.list.d/*.sources" > /dev/null; then \
-        while IFS= read -r source_file; do \
+    if [ -d /etc/apt/sources.list.d ]; then \
+        for source_file in /etc/apt/sources.list.d/*.sources; do \
+            [ -f "${source_file}" ] || continue; \
             sed -i \
                 -e "s|http://deb.debian.org/debian|${apt_mirror}|g" \
                 -e "s|https://deb.debian.org/debian|${apt_mirror}|g" \
@@ -60,7 +61,7 @@ RUN set -euo pipefail; \
                 -e "s|http://deb.debian.org/debian-security|${apt_security_mirror}|g" \
                 -e "s|https://deb.debian.org/debian-security|${apt_security_mirror}|g" \
                 "${source_file}"; \
-        done < <(find /etc/apt/sources.list.d -maxdepth 1 -type f -name '*.sources' | sort); \
+        done; \
     fi; \
     apt-get \
         -o Acquire::Retries="${APT_RETRIES}" \
@@ -100,13 +101,13 @@ RUN set -euo pipefail; \
         zip \
     && rm -rf /var/lib/apt/lists/*
 
-RUN set -euo pipefail; \
+RUN set -eu; \
     wget -q https://packages.microsoft.com/config/debian/12/packages-microsoft-prod.deb -O /tmp/packages-microsoft-prod.deb; \
     dpkg -i /tmp/packages-microsoft-prod.deb; \
     rm -f /tmp/packages-microsoft-prod.deb; \
     arch="$(dpkg --print-architecture)"; \
     dotnet_sdk_package="${DOTNET_SDK_PACKAGE}"; \
-    if [[ -z "${dotnet_sdk_package}" ]]; then \
+    if [ -z "${dotnet_sdk_package}" ]; then \
         case "${arch}" in \
             amd64) dotnet_sdk_package="dotnet-sdk-10.0" ;; \
             arm64) dotnet_sdk_package="dotnet-sdk-10.0" ;; \
@@ -127,16 +128,16 @@ RUN set -euo pipefail; \
         "${dotnet_sdk_package}" \
     && rm -rf /var/lib/apt/lists/*
 
-RUN set -euo pipefail; \
-    pip_args=(); \
-    if [[ -n "${PIP_INDEX_URL}" ]]; then \
-        pip_args+=(--index-url "${PIP_INDEX_URL}"); \
+RUN set -eu; \
+    pip_args=""; \
+    if [ -n "${PIP_INDEX_URL}" ]; then \
+        pip_args="${pip_args} --index-url ${PIP_INDEX_URL}"; \
     fi; \
-    if [[ -n "${PIP_EXTRA_INDEX_URL}" ]]; then \
-        pip_args+=(--extra-index-url "${PIP_EXTRA_INDEX_URL}"); \
+    if [ -n "${PIP_EXTRA_INDEX_URL}" ]; then \
+        pip_args="${pip_args} --extra-index-url ${PIP_EXTRA_INDEX_URL}"; \
     fi; \
-    python -m pip install --upgrade "${pip_args[@]}" pip \
-    && python -m pip install "${pip_args[@]}" \
+    python -m pip install --upgrade ${pip_args} pip \
+    && python -m pip install ${pip_args} \
         defusedxml \
         'markitdown[pptx]' \
         matplotlib \
@@ -145,7 +146,7 @@ RUN set -euo pipefail; \
         pypdf \
         reportlab
 
-RUN set -euo pipefail; \
+RUN set -eu; \
     mkdir -p "${DAILY_OFFICE_HOME}" "${NUGET_PACKAGES}"; \
     npm_registry="${NPM_REGISTRY:-https://registry.npmjs.org}"; \
     npm install --prefix "${DAILY_OFFICE_HOME}" --omit=dev --no-package-lock --registry "${npm_registry}" \
@@ -156,7 +157,7 @@ RUN set -euo pipefail; \
         react-icons@^5.4.0 \
         sharp@^0.33.5
 
-RUN set -euo pipefail; \
+RUN set -eu; \
     arch="$(dpkg --print-architecture)"; \
     case "${arch}" in \
         amd64) \
@@ -172,9 +173,8 @@ RUN set -euo pipefail; \
         *) echo "Unsupported architecture: ${arch}" >&2; exit 1 ;; \
     esac; \
     install_cli() { \
-        local cli_name="$1"; \
-        local asset_url="$2"; \
-        local tmpdir archive bin_path; \
+        cli_name="$1"; \
+        asset_url="$2"; \
         tmpdir="$(mktemp -d)"; \
         archive="${tmpdir}/$(basename "${asset_url%%\?*}")"; \
         curl -fsSL "${asset_url}" -o "${archive}"; \
@@ -185,7 +185,7 @@ RUN set -euo pipefail; \
             *) echo "Unsupported archive format for ${cli_name}: ${archive}" >&2; exit 1 ;; \
         esac; \
         bin_path="$(find "${tmpdir}/unpacked" -type f -name "${cli_name}" -perm -111 | head -n 1)"; \
-        if [[ -z "${bin_path}" ]]; then \
+        if [ -z "${bin_path}" ]; then \
             echo "Failed to locate the ${cli_name} binary in ${archive}" >&2; \
             exit 1; \
         fi; \

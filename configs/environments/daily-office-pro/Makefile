@@ -6,11 +6,16 @@ CN_PYTHON_BASE_IMAGE ?= m.daocloud.io/docker.io/library/python:3.12-slim-bookwor
 CN_APT_MIRROR ?= https://mirrors.tuna.tsinghua.edu.cn/debian
 CN_APT_SECURITY_MIRROR ?= https://mirrors.tuna.tsinghua.edu.cn/debian-security
 CN_PIP_INDEX_URL ?= https://pypi.tuna.tsinghua.edu.cn/simple
+CN_APT_MIRROR ?= https://mirrors.tuna.tsinghua.edu.cn/debian
+CN_APT_SECURITY_MIRROR ?= https://mirrors.tuna.tsinghua.edu.cn/debian-security
+CN_PIP_INDEX_URL ?= https://pypi.tuna.tsinghua.edu.cn/simple
 CN_NPM_REGISTRY ?= https://registry.npmmirror.com
 HIMALAYA_DOWNLOAD_URL ?=
 DBX_DOWNLOAD_URL ?=
 HTTPX_DOWNLOAD_URL ?=
 DOTNET_SDK_PACKAGE ?=
+
+BUILD_FLAGS ?=
 
 .PHONY: build build-cn
 
@@ -18,7 +23,7 @@ DOTNET_SDK_PACKAGE ?=
 #   make build-cn  # builds the CN-friendly variant of daily-office-pro:latest
 
 build:
-	$(CONTAINER_ENGINE) build \
+	$(CONTAINER_ENGINE) build $(BUILD_FLAGS) \
 		--tag $(IMAGE_NAME):$(TAG) \
 		--build-arg PYTHON_BASE_IMAGE=$(PYTHON_BASE_IMAGE) \
 		--build-arg HIMALAYA_DOWNLOAD_URL=$(HIMALAYA_DOWNLOAD_URL) \
@@ -29,7 +34,7 @@ build:
 		.
 
 build-cn:
-	$(CONTAINER_ENGINE) build \
+	$(CONTAINER_ENGINE) build $(BUILD_FLAGS) \
 		--tag $(IMAGE_NAME):$(TAG) \
 		--build-arg PYTHON_BASE_IMAGE=$(CN_PYTHON_BASE_IMAGE) \
 		--build-arg APT_MIRROR=$(CN_APT_MIRROR) \
