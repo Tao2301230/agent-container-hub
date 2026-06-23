@@ -5,13 +5,19 @@ $Script:BundleRoot = Split-Path -Parent $Script:ProgramCommonDir
 $Script:AppName = 'agent-container-hub'
 $Script:ManifestFile = Join-Path $Script:BundleRoot 'manifest.json'
 $Script:EnvExampleFile = Join-Path $Script:BundleRoot '.env.example'
+$Script:HubExampleFile = Join-Path (Join-Path $Script:BundleRoot 'configs') 'hub.example.yml'
 $Script:BackendBin = Join-Path (Join-Path $Script:BundleRoot 'backend') 'agent-container-hub.exe'
 $Script:ConfigDir = $Script:BundleRoot
 $Script:DataDir = Join-Path $Script:BundleRoot 'data'
 $Script:RunDir = Join-Path $Script:BundleRoot 'run'
 $Script:LogDir = $Script:RunDir
 $Script:ProgramBindAddr = ''
+$Script:ProgramConfigDirExplicit = $false
+$Script:ProgramDataDirExplicit = $false
+$Script:ProgramStateDirExplicit = $false
+$Script:ProgramLogDirExplicit = $false
 $Script:EnvFile = ''
+$Script:HubConfigFile = ''
 $Script:ConfigEnvDir = ''
 $Script:RootfsDir = ''
 $Script:BuildDir = ''
@@ -21,6 +27,7 @@ $Script:ErrorLogFile = ''
 
 function Update-ProgramLayoutPaths {
   $Script:EnvFile = Join-Path $Script:ConfigDir '.env'
+  $Script:HubConfigFile = Join-Path (Join-Path $Script:ConfigDir 'configs') 'hub.yml'
   $Script:ConfigEnvDir = Join-Path (Join-Path $Script:ConfigDir 'configs') 'environments'
   $Script:RootfsDir = Join-Path $Script:DataDir 'rootfs'
   $Script:BuildDir = Join-Path $Script:DataDir 'builds'
@@ -39,12 +46,14 @@ function Set-ProgramLayoutArgs {
         if ($i + 1 -ge $Arguments.Count) { Fail-Program 'missing value for --config-dir' }
         $i++
         $Script:ConfigDir = $Arguments[$i]
+        $Script:ProgramConfigDirExplicit = $true
         continue
       }
       '--data-dir' {
         if ($i + 1 -ge $Arguments.Count) { Fail-Program 'missing value for --data-dir' }
         $i++
         $Script:DataDir = $Arguments[$i]
+        $Script:ProgramDataDirExplicit = $true
         continue
       }
       '--state-dir' {
@@ -52,6 +61,7 @@ function Set-ProgramLayoutArgs {
         $previousDefaultLogDir = Join-Path $Script:BundleRoot 'run'
         $i++
         $Script:RunDir = $Arguments[$i]
+        $Script:ProgramStateDirExplicit = $true
         if ($Script:LogDir -eq $previousDefaultLogDir) {
           $Script:LogDir = $Script:RunDir
         }
@@ -61,6 +71,7 @@ function Set-ProgramLayoutArgs {
         if ($i + 1 -ge $Arguments.Count) { Fail-Program 'missing value for --log-dir' }
         $i++
         $Script:LogDir = $Arguments[$i]
+        $Script:ProgramLogDirExplicit = $true
         continue
       }
       '--bind-addr' {
@@ -90,15 +101,21 @@ function Test-ProgramBundle {
   if (-not (Test-Path -LiteralPath $Script:EnvExampleFile -PathType Leaf)) {
     Fail-Program "required file not found: $Script:EnvExampleFile"
   }
+  if (-not (Test-Path -LiteralPath $Script:HubExampleFile -PathType Leaf)) {
+    Fail-Program "required file not found: $Script:HubExampleFile"
+  }
   if (-not (Test-Path -LiteralPath $Script:BackendBin -PathType Leaf)) {
     Fail-Program "required file not found: $Script:BackendBin"
   }
 }
 
 function Initialize-ProgramConfig {
-  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Script:EnvFile), $Script:ConfigEnvDir | Out-Null
+  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Script:EnvFile), (Split-Path -Parent $Script:HubConfigFile), $Script:ConfigEnvDir | Out-Null
   if (-not (Test-Path -LiteralPath $Script:EnvFile -PathType Leaf)) {
     Copy-Item -LiteralPath $Script:EnvExampleFile -Destination $Script:EnvFile
+  }
+  if (-not (Test-Path -LiteralPath $Script:HubConfigFile -PathType Leaf)) {
+    Copy-Item -LiteralPath $Script:HubExampleFile -Destination $Script:HubConfigFile
   }
   $sourceEnvDir = Join-Path (Join-Path $Script:BundleRoot 'configs') 'environments'
   if (Test-Path -LiteralPath $sourceEnvDir -PathType Container) {
@@ -205,7 +222,19 @@ function Start-ProgramBackend {
     [switch]$Daemon
   )
 
-  $backendArgs = @('--config-dir', $Script:ConfigDir, '--data-dir', $Script:DataDir, '--state-dir', $Script:RunDir, '--log-dir', $Script:LogDir)
+  $backendArgs = @()
+  if ($Script:ProgramConfigDirExplicit) {
+    $backendArgs += @('--config-dir', $Script:ConfigDir)
+  }
+  if ($Script:ProgramDataDirExplicit) {
+    $backendArgs += @('--data-dir', $Script:DataDir)
+  }
+  if ($Script:ProgramStateDirExplicit) {
+    $backendArgs += @('--state-dir', $Script:RunDir)
+  }
+  if ($Script:ProgramLogDirExplicit) {
+    $backendArgs += @('--log-dir', $Script:LogDir)
+  }
   if ($Script:ProgramBindAddr) {
     $backendArgs += @('--bind-addr', $Script:ProgramBindAddr)
   } elseif ($env:BIND_ADDR) {

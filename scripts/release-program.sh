@@ -21,6 +21,7 @@ require_file "$PROGRAM_RELEASE_ASSETS_DIR/windows/start.ps1"
 require_file "$PROGRAM_RELEASE_ASSETS_DIR/windows/stop.ps1"
 require_file "$PROGRAM_RELEASE_ASSETS_DIR/windows/program-common.ps1"
 require_file "$REPO_ROOT/.env.example"
+require_file "$REPO_ROOT/configs/hub.example.yml"
 require_dir "$REPO_ROOT/configs/environments"
 
 cd "$REPO_ROOT"
@@ -66,6 +67,7 @@ build_program_bundle() {
 
   echo "[release] assembling program bundle for $target_os..."
   cp "$REPO_ROOT/.env.example" "$bundle_root/.env.example"
+  cp "$REPO_ROOT/configs/hub.example.yml" "$bundle_root/configs/hub.example.yml"
   write_program_manifest "$bundle_root/manifest.json" "$target_os" "$target_arch" "$backend_entry" "$(basename "$bundle_archive")"
 
   tar --exclude='.DS_Store' -C "$REPO_ROOT/configs" -cf - environments | tar -C "$bundle_root/configs" -xf -

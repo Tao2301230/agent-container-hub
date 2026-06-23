@@ -11,6 +11,9 @@ RELEASE_ASSETS_DIR="$SCRIPT_DIR/release-assets/image-bundle"
 resolve_release_context
 require_image_tools
 command -v tar >/dev/null 2>&1 || die "tar is required"
+require_file "$REPO_ROOT/.env.example"
+require_file "$REPO_ROOT/configs/hub.example.yml"
+require_dir "$REPO_ROOT/configs/environments"
 
 cd "$REPO_ROOT"
 
@@ -28,6 +31,7 @@ mkdir -p \
   "$BUNDLE_ROOT/configs"
 
 cp "$REPO_ROOT/.env.example" "$BUNDLE_ROOT/.env.example"
+cp "$REPO_ROOT/configs/hub.example.yml" "$BUNDLE_ROOT/configs/hub.example.yml"
 cp "$RELEASE_ASSETS_DIR/README.txt" "$BUNDLE_ROOT/README.txt"
 cp "$RELEASE_ASSETS_DIR/load-image.sh" "$BUNDLE_ROOT/load-image.sh"
 chmod +x "$BUNDLE_ROOT/load-image.sh"

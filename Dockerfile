@@ -18,6 +18,7 @@ ENV BIND_ADDR=0.0.0.0:11960
 
 COPY --from=builder /out/agent-container-hub /usr/local/bin/agent-container-hub
 COPY .env.example /app/.env.example
+COPY configs/hub.example.yml /app/configs/hub.example.yml
 
 EXPOSE 11960
 

@@ -1,0 +1,26 @@
+server:
+  host: 127.0.0.1
+  port: 11960
+
+runtime:
+  engine: auto
+  network_policy_helper_image: agent-container-hub/network-policy-helper:latest
+
+paths:
+  state_db_path: ../data/hub.db
+  rootfs_root: ../data/rootfs
+  build_root: ../data/builds
+  session_mount_template_root: ""
+
+execution:
+  default_command_timeout: 30s
+  delete_rootfs_on_stop: true
+  log_persist: false
+  log_max_output_bytes: 65536
+
+http_logs:
+  access_enabled: false
+  error_enabled: false
+
+ui:
+  display_timezone: Asia/Shanghai

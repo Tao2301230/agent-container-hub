@@ -778,7 +778,7 @@ function renderExecuteLogs() {
   if (state.executions.items.length === 0) {
     executionHistory.innerHTML = renderEmptyState(
       "No persisted execute logs",
-      "Enable <code>ENABLE_EXEC_LOG_PERSIST</code> to store future executions, or run a command if nothing has executed yet.",
+      "Enable <code>execution.log_persist</code> in <code>configs/hub.yml</code> to store future executions, or run a command if nothing has executed yet.",
     );
     executionDetail.className = "empty";
     executionDetail.innerHTML = `

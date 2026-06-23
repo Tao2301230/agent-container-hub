@@ -6,13 +6,19 @@ BUNDLE_ROOT="$(cd "$PROGRAM_COMMON_DIR/.." && pwd)"
 APP_NAME="agent-container-hub"
 MANIFEST_FILE="$BUNDLE_ROOT/manifest.json"
 ENV_EXAMPLE_FILE="$BUNDLE_ROOT/.env.example"
+HUB_EXAMPLE_FILE="$BUNDLE_ROOT/configs/hub.example.yml"
 BACKEND_BIN="$BUNDLE_ROOT/backend/$APP_NAME"
 CONFIG_DIR="$BUNDLE_ROOT"
 DATA_DIR="$BUNDLE_ROOT/data"
 RUN_DIR="$BUNDLE_ROOT/run"
 LOG_DIR="$RUN_DIR"
 PROGRAM_BIND_ADDR=""
+PROGRAM_CONFIG_DIR_EXPLICIT=0
+PROGRAM_DATA_DIR_EXPLICIT=0
+PROGRAM_STATE_DIR_EXPLICIT=0
+PROGRAM_LOG_DIR_EXPLICIT=0
 ENV_FILE=""
+HUB_CONFIG_FILE=""
 CONFIG_ENV_DIR=""
 ROOTFS_DIR=""
 BUILD_DIR=""
@@ -21,6 +27,7 @@ LOG_FILE=""
 
 program_refresh_layout_paths() {
   ENV_FILE="$CONFIG_DIR/.env"
+  HUB_CONFIG_FILE="$CONFIG_DIR/configs/hub.yml"
   CONFIG_ENV_DIR="$CONFIG_DIR/configs/environments"
   ROOTFS_DIR="$DATA_DIR/rootfs"
   BUILD_DIR="$DATA_DIR/builds"
@@ -34,16 +41,19 @@ program_apply_layout_args() {
       --config-dir)
         [[ $# -ge 2 ]] || program_die "missing value for --config-dir"
         CONFIG_DIR="$2"
+        PROGRAM_CONFIG_DIR_EXPLICIT=1
         shift 2
         ;;
       --data-dir)
         [[ $# -ge 2 ]] || program_die "missing value for --data-dir"
         DATA_DIR="$2"
+        PROGRAM_DATA_DIR_EXPLICIT=1
         shift 2
         ;;
       --state-dir)
         [[ $# -ge 2 ]] || program_die "missing value for --state-dir"
         RUN_DIR="$2"
+        PROGRAM_STATE_DIR_EXPLICIT=1
         if [[ "$LOG_DIR" == "$BUNDLE_ROOT/run" ]]; then
           LOG_DIR="$RUN_DIR"
         fi
@@ -52,6 +62,7 @@ program_apply_layout_args() {
       --log-dir)
         [[ $# -ge 2 ]] || program_die "missing value for --log-dir"
         LOG_DIR="$2"
+        PROGRAM_LOG_DIR_EXPLICIT=1
         shift 2
         ;;
       --bind-addr)
@@ -87,13 +98,17 @@ program_require_dir() {
 program_validate_bundle() {
   program_require_file "$MANIFEST_FILE"
   program_require_file "$ENV_EXAMPLE_FILE"
+  program_require_file "$HUB_EXAMPLE_FILE"
   [[ -x "$BACKEND_BIN" ]] || program_die "backend binary is not executable: $BACKEND_BIN"
 }
 
 program_initialize_config() {
-  mkdir -p "$(dirname "$ENV_FILE")" "$CONFIG_ENV_DIR"
+  mkdir -p "$(dirname "$ENV_FILE")" "$(dirname "$HUB_CONFIG_FILE")" "$CONFIG_ENV_DIR"
   if [[ ! -f "$ENV_FILE" ]]; then
     cp "$ENV_EXAMPLE_FILE" "$ENV_FILE"
+  fi
+  if [[ ! -f "$HUB_CONFIG_FILE" ]]; then
+    cp "$HUB_EXAMPLE_FILE" "$HUB_CONFIG_FILE"
   fi
   local source_env_dir="$BUNDLE_ROOT/configs/environments"
   if [[ -d "$source_env_dir" ]]; then
@@ -172,7 +187,19 @@ program_clear_stale_pid() {
 
 program_start_backend_daemon() {
   local pid
-  local backend_args=(--config-dir "$CONFIG_DIR" --data-dir "$DATA_DIR" --state-dir "$RUN_DIR" --log-dir "$LOG_DIR")
+  local backend_args=()
+  if [[ "$PROGRAM_CONFIG_DIR_EXPLICIT" == "1" ]]; then
+    backend_args+=(--config-dir "$CONFIG_DIR")
+  fi
+  if [[ "$PROGRAM_DATA_DIR_EXPLICIT" == "1" ]]; then
+    backend_args+=(--data-dir "$DATA_DIR")
+  fi
+  if [[ "$PROGRAM_STATE_DIR_EXPLICIT" == "1" ]]; then
+    backend_args+=(--state-dir "$RUN_DIR")
+  fi
+  if [[ "$PROGRAM_LOG_DIR_EXPLICIT" == "1" ]]; then
+    backend_args+=(--log-dir "$LOG_DIR")
+  fi
   if [[ -n "$PROGRAM_BIND_ADDR" ]]; then
     backend_args+=(--bind-addr "$PROGRAM_BIND_ADDR")
   elif [[ -n "${BIND_ADDR:-}" ]]; then
@@ -181,7 +208,11 @@ program_start_backend_daemon() {
 
   program_clear_stale_pid
   : >"$LOG_FILE"
-  nohup "$BACKEND_BIN" "${backend_args[@]}" >>"$LOG_FILE" 2>&1 &
+  if ((${#backend_args[@]} > 0)); then
+    nohup "$BACKEND_BIN" "${backend_args[@]}" >>"$LOG_FILE" 2>&1 &
+  else
+    nohup "$BACKEND_BIN" >>"$LOG_FILE" 2>&1 &
+  fi
   pid=$!
   printf '%s\n' "$pid" >"$PID_FILE"
   sleep 1
@@ -194,13 +225,28 @@ program_start_backend_daemon() {
 }
 
 program_exec_backend() {
-  local backend_args=(--config-dir "$CONFIG_DIR" --data-dir "$DATA_DIR" --state-dir "$RUN_DIR" --log-dir "$LOG_DIR")
+  local backend_args=()
+  if [[ "$PROGRAM_CONFIG_DIR_EXPLICIT" == "1" ]]; then
+    backend_args+=(--config-dir "$CONFIG_DIR")
+  fi
+  if [[ "$PROGRAM_DATA_DIR_EXPLICIT" == "1" ]]; then
+    backend_args+=(--data-dir "$DATA_DIR")
+  fi
+  if [[ "$PROGRAM_STATE_DIR_EXPLICIT" == "1" ]]; then
+    backend_args+=(--state-dir "$RUN_DIR")
+  fi
+  if [[ "$PROGRAM_LOG_DIR_EXPLICIT" == "1" ]]; then
+    backend_args+=(--log-dir "$LOG_DIR")
+  fi
   if [[ -n "$PROGRAM_BIND_ADDR" ]]; then
     backend_args+=(--bind-addr "$PROGRAM_BIND_ADDR")
   elif [[ -n "${BIND_ADDR:-}" ]]; then
     backend_args+=(--bind-addr "$BIND_ADDR")
   fi
-  exec "$BACKEND_BIN" "${backend_args[@]}"
+  if ((${#backend_args[@]} > 0)); then
+    exec "$BACKEND_BIN" "${backend_args[@]}"
+  fi
+  exec "$BACKEND_BIN"
 }
 
 program_stop_backend() {

@@ -72,6 +72,7 @@ agent-container-hub/
   backend/
     agent-container-hub
   configs/
+    hub.example.yml
     environments/
 ```
 
@@ -90,6 +91,7 @@ agent-container-hub/
   backend/
     agent-container-hub.exe
   configs/
+    hub.example.yml
     environments/
 ```
 
@@ -174,7 +176,7 @@ dist/release/agent-container-hub-image-vX.Y.Z-linux-<arch>.tar.gz
 - 固定构建 Linux 镜像
 - 默认使用当前机器架构
 - 先导出为 `docker save` 生成的镜像 tar.gz
-- 再把镜像文件、`.env.example`、`configs/environments/` 和加载脚本组装进总包
+- 再把镜像文件、`.env.example`、`configs/hub.example.yml`、`configs/environments/` 和加载脚本组装进总包
 - 不预置空的 `data/` 目录
 
 ### 4.3 Bundle 内容
@@ -185,6 +187,7 @@ agent-container-hub/
   README.txt
   load-image.sh
   configs/
+    hub.example.yml
     environments/
   images/
     agent-container-hub-image-vX.Y.Z-linux-<arch>.tar.gz

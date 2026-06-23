@@ -233,6 +233,7 @@ write_program_manifest() {
       "$program_common_script"
       ".env.example"
       "manifest.json"
+      "configs/hub.example.yml"
       "configs/environments"
     )
   else
@@ -244,6 +245,7 @@ write_program_manifest() {
       "$program_common_script"
       ".env.example"
       "manifest.json"
+      "configs/hub.example.yml"
       "configs/environments"
     )
   fi
@@ -289,6 +291,13 @@ write_program_manifest() {
   },
   "configFiles": [
     {
+      "key": "hub",
+      "label": "configs/hub.yml",
+      "relativePath": "configs/hub.yml",
+      "templateRelativePath": "configs/hub.example.yml",
+      "required": true
+    },
+    {
       "key": "env",
       "label": ".env",
       "relativePath": ".env",
@@ -306,6 +315,10 @@ ${required_paths_json}
   },
   "web": {
     "routePath": "/",
+    "hostConfigRelativePath": "configs/hub.yml",
+    "hostConfigKey": "server.host",
+    "portConfigRelativePath": "configs/hub.yml",
+    "portConfigKey": "server.port",
     "portEnvKey": "BIND_ADDR",
     "defaultPort": 11960,
     "portFormat": "host:port"

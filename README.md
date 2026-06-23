@@ -36,7 +36,7 @@ environment YAML 定义了：
 
 environment 可以内嵌 Dockerfile。调用构建接口后，服务会：
 
-- 在 `BUILD_ROOT` 下生成构建上下文
+- 在 `paths.build_root` 下生成构建上下文
 - 调用宿主机容器引擎执行 build
 - 保存 build job 记录
 - 若配置了 `smoke_command`，再起一个临时容器做 smoke check
@@ -61,17 +61,22 @@ environment 可以内嵌 Dockerfile。调用构建接口后，服务会：
 ### 本地启动
 
 ```bash
-cp .env.example .env
+cp configs/hub.example.yml configs/hub.yml
 ```
 
 最少确认这些配置：
 
-- `BIND_ADDR=127.0.0.1:11960`
-- `STATE_DB_PATH=./data/hub.db`
-- `CONFIG_ROOT=./configs`
-- `ROOTFS_ROOT=./data/rootfs`
-- `BUILD_ROOT=./data/builds`
-- `ENGINE=auto` 自动探测，或显式指定 `docker` / `podman`
+- `server.port=11960`
+- `paths.state_db_path=../data/hub.db`
+- `paths.rootfs_root=../data/rootfs`
+- `paths.build_root=../data/builds`
+- `runtime.engine=auto` 自动探测，或显式指定 `docker` / `podman`
+
+如果需要对外监听或设置管理站登录 token，再复制并填写 `.env`：
+
+```bash
+cp .env.example .env
+```
 
 启动：
 
@@ -187,94 +192,58 @@ PROGRAM_TARGETS=windows make release-program VERSION=v0.1.0 ARCH=amd64
 
 ## 配置
 
-项目只使用环境变量配置。
+服务配置优先使用 `configs/hub.yml`。首次自定义时从样板复制：
 
-主要配置项：
+```bash
+cp configs/hub.example.yml configs/hub.yml
+```
 
-- `BIND_ADDR`
-  - 默认值：`127.0.0.1:8080`
-  - HTTP 监听地址
-- `AUTH_TOKEN`
-  - 默认值：空
-  - 当监听地址不是本地回环地址时必填
-- `STATE_DB_PATH`
-  - 默认值：`./data/hub.db`
+程序启动时会自动尝试读取 `CONFIG_ROOT/hub.yml`；文件不存在时使用代码默认值。`CONFIG_ROOT` 默认是 `./configs`，也可通过旧环境变量或 `--config-dir` 指定。`hub.yml` 内的相对路径按 `hub.yml` 所在目录解析。
+
+加载优先级：
+
+```text
+代码默认值 < configs/hub.yml < 环境变量兼容覆盖 < CLI 参数
+```
+
+主要 YAML 配置项：
+
+- `server.host` / `server.port`
+  - 默认值：`127.0.0.1` / `11960`
+  - 对外监听时将 `host` 设置为 `0.0.0.0`，并必须通过 `AUTH_TOKEN` 设置登录 token
+- `paths.state_db_path`
   - SQLite 运行态数据库路径，保存 `sessions`、`build_jobs`、`session_executions`
-- `CONFIG_ROOT`
-  - 默认值：`./configs`
-  - environment / image YAML 配置根目录，实际环境文件位于 `configs/environments/<name>/environment.yml`
-- `ROOTFS_ROOT`
-  - 默认值：`./data/rootfs`
+- `paths.rootfs_root`
   - session rootfs 根目录
-- `BUILD_ROOT`
-  - 默认值：`./data/builds`
+- `paths.build_root`
   - environment build context 与 smoke check 临时目录根路径
-- `SESSION_MOUNT_TEMPLATE_ROOT`
-  - 默认值：空
+- `paths.session_mount_template_root`
   - 可选的会话挂载模板目录；未配置时模板接口返回空模板
-- `ENGINE`
-  - 默认值：自动探测
+- `runtime.engine`
   - 可选值：`auto`、`docker`、`podman`
-- `DEFAULT_COMMAND_TIMEOUT`
-  - 默认值：`30s`
+- `runtime.network_policy_helper_image`
+  - 当 session 配置 `network_policy` 时，用该 helper 镜像加入 session 容器的 network namespace 并安装 iptables/ip6tables 规则
+- `execution.default_command_timeout`
   - execute 请求未显式提供 `timeout_ms` 时的默认超时
-- `DELETE_ROOTFS_ON_STOP`
-  - 默认值：`true`
+- `execution.delete_rootfs_on_stop`
   - session 停止或被校正为 stopped 时是否删除 rootfs 目录
-- `ENABLE_EXEC_LOG_PERSIST`
-  - 默认值：`false`
+- `execution.log_persist`
   - 是否持久化 execute 日志到 SQLite
-- `EXEC_LOG_MAX_OUTPUT_BYTES`
-  - 默认值：`65536`
-  - 持久化 `stdout/stderr` 时的单字段最大字节数，超出会截断并记录标记
-- `NETWORK_POLICY_HELPER_IMAGE`
-  - 默认值：`agent-container-hub/network-policy-helper:latest`
-  - 当 session 配置 `network_policy` 时，服务端用该 helper 镜像加入 session 容器的 network namespace 并安装 iptables/ip6tables 规则
+- `execution.log_max_output_bytes`
+  - 持久化 `stdout/stderr` 时的单字段最大字节数
+- `http_logs.access_enabled` / `http_logs.error_enabled`
+  - 是否输出 HTTP access / error 日志
+- `ui.display_timezone`
+  - 管理站日期时间展示使用的 IANA 时区
 
-示例：
+`.env` 只建议放敏感项：
 
 ```dotenv
-# HTTP listen address in host:port form.
-# Use 127.0.0.1:11960 for local-only access.
-BIND_ADDR=127.0.0.1:11960
-
-# Optional when binding locally. Required when binding to non-local addresses.
+# Optional when binding locally. Required when exposing the service beyond localhost.
 AUTH_TOKEN=
-
-# Runtime metadata database path for sessions and build jobs.
-STATE_DB_PATH=./data/hub.db
-
-# Root directory for YAML environment/image configs.
-CONFIG_ROOT=./configs
-
-# Root directory for per-session rootfs directories mounted into containers at /workspace.
-ROOTFS_ROOT=./data/rootfs
-
-# Root directory used for managed image builds and smoke-check temp files.
-BUILD_ROOT=./data/builds
-
-# Optional container engine override.
-# Supported values: auto, docker, or podman.
-# Use auto to search for docker first, then podman.
-# Leaving this empty also enables the same auto-detection behavior.
-# Startup validates the selected engine by running `<engine> info`.
-# The legacy local mode has been removed and can no longer be configured.
-ENGINE=auto
-
-# Default timeout used when execute requests omit timeout_ms.
-DEFAULT_COMMAND_TIMEOUT=30s
-
-# Persist execute stdout/stderr into SQLite for future session execution history queries.
-# Set to true only if you want `/executions` to retain logs beyond the current response.
-ENABLE_EXEC_LOG_PERSIST=true
-
-# Helper image used to install enforced network_policy rules from outside the session container.
-NETWORK_POLICY_HELPER_IMAGE=agent-container-hub/network-policy-helper:latest
-
-# Max bytes stored per stdout/stderr field in session_executions when persistence is enabled.
-# Larger values keep more output but grow the SQLite file faster.
-EXEC_LOG_MAX_OUTPUT_BYTES=65536
 ```
+
+旧环境变量仍保留兼容覆盖能力，包括 `BIND_ADDR`、`STATE_DB_PATH`、`ROOTFS_ROOT`、`BUILD_ROOT`、`SESSION_MOUNT_TEMPLATE_ROOT`、`ENGINE`、`DEFAULT_COMMAND_TIMEOUT`、`DELETE_ROOTFS_ON_STOP`、`ENABLE_EXEC_LOG_PERSIST`、`EXEC_LOG_MAX_OUTPUT_BYTES`、`NETWORK_POLICY_HELPER_IMAGE`、`DISPLAY_TIMEZONE`、`TZ`、`HTTP_ACCESS_LOG_ENABLED`、`HTTP_ERROR_LOG_ENABLED`。
 
 ## API 概览
 
@@ -386,7 +355,7 @@ curl "http://127.0.0.1:11960/api/sessions/demo-shell/executions?page=1&page_size
 - `GET /api/sessions` 保持兼容，只返回当前激活中的 session
 - `GET /api/sessions/query` 支持 `status=active|history|all`、`session_id`、`environment_name`、`page`、`page_size`
 - 历史 session 会保留 `stopped_at`
-- 只有在 `ENABLE_EXEC_LOG_PERSIST=true` 时，`/executions` 才会返回持久化日志
+- 只有在 `execution.log_persist: true` 时，`/executions` 才会返回持久化日志
 
 停止 session 示例：
 
@@ -593,7 +562,6 @@ build:
 make release VERSION=v0.1.0
 tar -xzf dist/release/agent-container-hub-v0.1.0-darwin-<arch>.tar.gz
 cd agent-container-hub
-cp .env.example .env
 ./deploy.sh
 ./start.sh
 ```
@@ -607,7 +575,7 @@ make build
 
 生产环境建议：
 
-- 将 `STATE_DB_PATH`、`CONFIG_ROOT`、`ROOTFS_ROOT`、`BUILD_ROOT` 指向持久化磁盘
+- 将 `configs/hub.yml` 中的运行态路径指向持久化磁盘，或通过 `--data-dir` / `--config-dir` 指定外部目录
 - 对外监听时务必设置 `AUTH_TOKEN`
 - 预先确认宿主机容器引擎权限、镜像仓库登录状态和 socket 可用性
 - `configs/environments/` 是唯一真相来源；若升级 bundle 前本地改过环境配置，请先备份或合并
@@ -635,6 +603,7 @@ agent-container-hub/
   backend/
     agent-container-hub
   configs/
+    hub.example.yml
     environments/
       shell/
       daily-office/
@@ -644,29 +613,29 @@ agent-container-hub/
 其中：
 
 - `manifest.json` 是 bundle 根目录固定契约，声明 frontend、API、后端入口和平台脚本
-- `deploy.sh` 只做 bundle 校验和运行目录初始化
+- `deploy.sh` 只做 bundle 校验、`.env` / `configs/hub.yml` 首次初始化和运行目录初始化
 - `start.sh` 默认前台运行，`./start.sh --daemon` 可切到后台
-- `start.sh` 会对 `ENGINE` 指定的容器引擎执行 `info` 校验；daemon 不可达时会直接退出
+- `start.sh` 会对 `ENGINE` 环境变量显式指定的容器引擎执行 `info` 校验；若未设置，则检查是否存在可用的 `docker` 或 `podman`
 - `stop.sh` 只负责停止 `--daemon` 模式启动的本地进程
 - `data/` 与 `run/` 在 `deploy.sh` 或 `start.sh` 首次执行时按需创建
-- 当前项目继续交付 `configs/environments/`，因为它是运行时必需配置
+- 当前项目继续交付 `configs/hub.example.yml` 和 `configs/environments/`，因为它们是运行时配置来源
 - 当前项目的管理站 UI 继续内嵌在 Go 二进制中，不提供外部静态资源目录；manifest 的 `frontend` 字段会明确说明前端入口是 `/`、资源前缀是 `/ui/`，并且可直接访问服务端口
-- `ENGINE` 留空或设置为 `docker` / `podman` 时，运行期仍依赖宿主机对应的容器引擎可用且 daemon 可达
+- `runtime.engine` 留空、`auto` 或设置为 `docker` / `podman` 时，运行期仍依赖宿主机对应的容器引擎可用且 daemon 可达
 
 ## 常见排查
 
 - 服务启动失败
   - 检查 `docker` / `podman` 是否可执行
   - 检查 `AUTH_TOKEN` 是否满足非本地监听要求
-  - 检查 `STATE_DB_PATH`、`ROOTFS_ROOT`、`BUILD_ROOT` 的父目录是否可写
-  - 若 `STATE_DB_PATH` 指向旧 bbolt 文件，服务会直接报错；请改成新的 SQLite 文件路径
+  - 检查 `configs/hub.yml` 中 `paths.state_db_path`、`paths.rootfs_root`、`paths.build_root` 的父目录是否可写
+  - 若 `paths.state_db_path` 指向旧 bbolt 文件，服务会直接报错；请改成新的 SQLite 文件路径
 - session 创建失败
   - 检查 `environment_name` 是否存在且已启用
   - 检查 `configs/environments/<name>.yaml` 是否存在且格式合法
   - 检查 mount 的 `destination` 是否重复；若显式使用保留路径 `/workspace`，会覆盖默认 rootfs 挂载
 - execute 日志为空
-  - 检查是否设置了 `ENABLE_EXEC_LOG_PERSIST=true`
-  - 检查 `EXEC_LOG_MAX_OUTPUT_BYTES` 是否过小导致输出被截断
+  - 检查是否设置了 `execution.log_persist: true`
+  - 检查 `execution.log_max_output_bytes` 是否过小导致输出被截断
 - build 失败
   - 检查 Dockerfile 是否有效
   - 检查宿主机容器引擎权限和 registry 登录状态
@@ -683,6 +652,6 @@ agent-container-hub/
 - 不会自动接管旧 `agentboxd` 容器
 - 旧登录 cookie 会失效，需要重新登录管理站
 - 旧 `agentbox.db` 或 bbolt 运行态数据不会自动迁移到新的 SQLite 结构
-- 升级后请为 `STATE_DB_PATH` 指向一个新的 SQLite 文件；environment 配置仍维护在 `configs/environments/`
+- 升级后请为 `paths.state_db_path` 指向一个新的 SQLite 文件；environment 配置仍维护在 `configs/environments/`
 
 更完整的目录职责和开发约束见 [CLAUDE.md](./CLAUDE.md)。

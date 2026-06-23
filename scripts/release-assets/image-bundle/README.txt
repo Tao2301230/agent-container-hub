@@ -5,11 +5,13 @@ It targets Linux hosts and includes the saved container image together with the 
 
 What is included:
 - .env.example
+- configs/hub.example.yml service config template
 - configs/environments/ runtime configs
 - images/*.tar.gz offline image archive
 - load-image.sh helper to import the bundled image into a local container engine
 
 Bundle layout notes:
+- configs/hub.example.yml is the template for the service-level configs/hub.yml file.
 - configs/environments is treated as the live environment config source.
 - No empty data/ tree is pre-created in the bundle; runtime data should be provisioned by the deployment environment.
 - The image archive name encodes the exact version and architecture.
@@ -17,7 +19,7 @@ Bundle layout notes:
 Recommended deployment flow:
 1. Extract the tar.gz bundle.
 2. Change into the extracted agent-container-hub directory.
-3. Copy .env.example to .env and adjust values for the target host.
+3. Copy configs/hub.example.yml to configs/hub.yml and adjust service settings for the target host.
 4. Run ./load-image.sh to import the bundled image into the local docker or podman image store.
 5. Start containers using your deployment method of choice with the imported image tag.
 

@@ -1,5 +1,6 @@
 # Local environment overrides
 .env
+configs/hub.yml
 
 # Local Go caches
 .gocache/

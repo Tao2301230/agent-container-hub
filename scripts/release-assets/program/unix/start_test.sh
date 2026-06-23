@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEPLOY_SCRIPT="$ROOT_DIR/deploy.sh"
 START_SCRIPT="$ROOT_DIR/start.sh"
 STOP_SCRIPT="$ROOT_DIR/stop.sh"
 PROGRAM_COMMON_SCRIPT="$ROOT_DIR/program-common.sh"
@@ -43,9 +44,15 @@ EOF
   cat >"$bundle_dir/configs/environments/shell/environment.yml" <<'EOF'
 name: shell
 EOF
+  cat >"$bundle_dir/configs/hub.example.yml" <<'EOF'
+server:
+  host: 127.0.0.1
+  port: 11960
+runtime:
+  engine: auto
+EOF
   cat >"$bundle_dir/.env" <<'EOF'
-BIND_ADDR=127.0.0.1:11960
-ENGINE=auto
+# AUTH_TOKEN=
 EOF
   cp "$bundle_dir/.env" "$bundle_dir/.env.example"
   cat >"$bundle_dir/backend/agent-container-hub" <<'EOF'
@@ -53,12 +60,34 @@ EOF
 sleep 5
 EOF
   chmod +x "$bundle_dir/backend/agent-container-hub"
+  cp "$DEPLOY_SCRIPT" "$bundle_dir/deploy.sh"
   cp "$START_SCRIPT" "$bundle_dir/start.sh"
   cp "$STOP_SCRIPT" "$bundle_dir/stop.sh"
   cp "$PROGRAM_COMMON_SCRIPT" "$bundle_dir/scripts/program-common.sh"
+  chmod +x "$bundle_dir/deploy.sh"
   chmod +x "$bundle_dir/start.sh"
   chmod +x "$bundle_dir/stop.sh"
   chmod +x "$bundle_dir/scripts/program-common.sh"
+}
+
+test_deploy_initializes_env_and_hub_config() {
+  local bundle_dir="$TMP_ROOT/deploy-init"
+  make_bundle "$bundle_dir"
+  rm -f "$bundle_dir/.env" "$bundle_dir/configs/hub.yml"
+
+  local output
+  output="$(
+    cd "$bundle_dir" &&
+      PATH="$SAFE_PATH" /bin/bash ./deploy.sh 2>&1
+  )"
+  assert_contains "$output" "bundle validated"
+  [[ -f "$bundle_dir/.env" ]] || { echo "expected .env to be created" >&2; exit 1; }
+  [[ -f "$bundle_dir/configs/hub.yml" ]] || { echo "expected configs/hub.yml to be created" >&2; exit 1; }
+  assert_contains "$(cat "$bundle_dir/configs/hub.yml")" "port: 11960"
+  if grep -qE '^(# )?(BIND_ADDR|HUB_CONFIG_PATH)=' "$bundle_dir/.env.example"; then
+    echo "expected .env.example to omit BIND_ADDR and HUB_CONFIG_PATH" >&2
+    exit 1
+  fi
 }
 
 make_fake_engine() {
@@ -297,6 +326,45 @@ EOF
   assert_contains "$output" "stopped agent-container-hub"
 }
 
+test_external_deploy_initialization_is_idempotent() {
+  local bundle_dir="$TMP_ROOT/external-deploy-idempotent"
+  local config_dir="$TMP_ROOT/external-deploy-config"
+  local data_dir="$TMP_ROOT/external-deploy-data"
+  local state_dir="$TMP_ROOT/external-deploy-state"
+  local log_dir="$TMP_ROOT/external-deploy-logs"
+  make_bundle "$bundle_dir"
+  mkdir -p "$config_dir/configs/environments/shell"
+  cat >"$config_dir/.env" <<'EOF'
+AUTH_TOKEN=custom-token
+EOF
+  cat >"$config_dir/configs/hub.yml" <<'EOF'
+server:
+  port: 13000
+EOF
+  cat >"$config_dir/configs/environments/shell/environment.yml" <<'EOF'
+name: custom-shell
+EOF
+
+  local output
+  output="$(
+    cd "$bundle_dir" &&
+      PATH="$SAFE_PATH" \
+      /bin/bash ./deploy.sh \
+        --config-dir "$config_dir" \
+        --data-dir "$data_dir" \
+        --state-dir "$state_dir" \
+        --log-dir "$log_dir" 2>&1
+  )"
+  assert_contains "$output" "bundle validated"
+  assert_contains "$(cat "$config_dir/.env")" "custom-token"
+  assert_contains "$(cat "$config_dir/configs/hub.yml")" "13000"
+  assert_contains "$(cat "$config_dir/configs/environments/shell/environment.yml")" "custom-shell"
+  [[ -d "$data_dir/rootfs" ]] || { echo "expected external rootfs dir to be created" >&2; exit 1; }
+  [[ -d "$state_dir" ]] || { echo "expected external state dir to be created" >&2; exit 1; }
+  [[ -d "$log_dir" ]] || { echo "expected external log dir to be created" >&2; exit 1; }
+}
+
+test_deploy_initializes_env_and_hub_config
 test_missing_env_fails_fast
 test_explicit_engine_creates_runtime_dirs_and_stops_cleanly
 test_invalid_pid_file_is_treated_as_stale
@@ -306,5 +374,6 @@ test_auto_alias_succeeds_with_fake_engine
 test_invalid_explicit_engine_fails_fast
 test_removed_local_engine_fails_fast
 test_external_config_initialization_is_idempotent
+test_external_deploy_initialization_is_idempotent
 
 echo "start.sh tests passed"

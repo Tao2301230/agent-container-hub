@@ -5,8 +5,11 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
@@ -30,7 +33,54 @@ type Config struct {
 	DisplayTimezone          string
 }
 
-const removedLocalEngineMessage = "ENGINE=" + "local has been removed; set ENGINE to docker, podman, or auto, or leave empty for auto-detect"
+const (
+	defaultBindHost           = "127.0.0.1"
+	defaultBindPort           = 11960
+	hubConfigFileName         = "hub.yml"
+	removedLocalEngineMessage = "ENGINE=" + "local has been removed; set ENGINE to docker, podman, or auto, or leave empty for auto-detect"
+)
+
+type hubFileConfig struct {
+	Server    hubServerConfig    `yaml:"server"`
+	Runtime   hubRuntimeConfig   `yaml:"runtime"`
+	Paths     hubPathsConfig     `yaml:"paths"`
+	Execution hubExecutionConfig `yaml:"execution"`
+	HTTPLogs  hubHTTPLogsConfig  `yaml:"http_logs"`
+	UI        hubUIConfig        `yaml:"ui"`
+}
+
+type hubServerConfig struct {
+	Host *string `yaml:"host"`
+	Port *int    `yaml:"port"`
+}
+
+type hubRuntimeConfig struct {
+	Engine                   *string `yaml:"engine"`
+	NetworkPolicyHelperImage *string `yaml:"network_policy_helper_image"`
+}
+
+type hubPathsConfig struct {
+	StateDBPath              *string `yaml:"state_db_path"`
+	RootfsRoot               *string `yaml:"rootfs_root"`
+	BuildRoot                *string `yaml:"build_root"`
+	SessionMountTemplateRoot *string `yaml:"session_mount_template_root"`
+}
+
+type hubExecutionConfig struct {
+	DefaultCommandTimeout *string `yaml:"default_command_timeout"`
+	DeleteRootfsOnStop    *bool   `yaml:"delete_rootfs_on_stop"`
+	LogPersist            *bool   `yaml:"log_persist"`
+	LogMaxOutputBytes     *int    `yaml:"log_max_output_bytes"`
+}
+
+type hubHTTPLogsConfig struct {
+	AccessEnabled *bool `yaml:"access_enabled"`
+	ErrorEnabled  *bool `yaml:"error_enabled"`
+}
+
+type hubUIConfig struct {
+	DisplayTimezone *string `yaml:"display_timezone"`
+}
 
 type cliOptions struct {
 	configDir string
@@ -53,19 +103,11 @@ func LoadWithArgs(args []string) (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("getwd: %w", err)
 	}
-	configRootDefault := filepath.Join(cwd, "configs")
-	stateDBPathDefault := filepath.Join(cwd, "data", "hub.db")
-	rootfsRootDefault := filepath.Join(cwd, "data", "rootfs")
-	buildRootDefault := filepath.Join(cwd, "data", "builds")
+	configRoot := getEnv("CONFIG_ROOT", filepath.Join(cwd, "configs"))
 	stateDirDefault := filepath.Join(cwd, "run")
 	logDirDefault := stateDirDefault
 	if options.configDir != "" {
-		configRootDefault = filepath.Join(options.configDir, "configs")
-	}
-	if options.dataDir != "" {
-		stateDBPathDefault = filepath.Join(options.dataDir, "hub.db")
-		rootfsRootDefault = filepath.Join(options.dataDir, "rootfs")
-		buildRootDefault = filepath.Join(options.dataDir, "builds")
+		configRoot = filepath.Join(options.configDir, "configs")
 	}
 	if options.stateDir != "" {
 		stateDirDefault = options.stateDir
@@ -74,50 +116,40 @@ func LoadWithArgs(args []string) (Config, error) {
 	if options.logDir != "" {
 		logDirDefault = options.logDir
 	}
-	bindAddr := getEnv("BIND_ADDR", "127.0.0.1:8080")
-	if options.bindAddr != "" {
-		bindAddr = options.bindAddr
-	}
-	stateDBPath := getEnv("STATE_DB_PATH", stateDBPathDefault)
-	configRoot := getEnv("CONFIG_ROOT", configRootDefault)
-	rootfsRoot := getEnv("ROOTFS_ROOT", rootfsRootDefault)
-	buildRoot := getEnv("BUILD_ROOT", buildRootDefault)
-	if options.configDir != "" {
-		configRoot = configRootDefault
-	}
-	if options.dataDir != "" {
-		stateDBPath = stateDBPathDefault
-		rootfsRoot = rootfsRootDefault
-		buildRoot = buildRootDefault
+	configRoot, err = absolutePath(configRoot)
+	if err != nil {
+		return Config{}, fmt.Errorf("normalize config root: %w", err)
 	}
 	cfg := Config{
-		BindAddr:                 bindAddr,
+		BindAddr:                 net.JoinHostPort(defaultBindHost, strconv.Itoa(defaultBindPort)),
 		AuthToken:                strings.TrimSpace(os.Getenv("AUTH_TOKEN")),
-		StateDBPath:              stateDBPath,
+		StateDBPath:              filepath.Join(cwd, "data", "hub.db"),
 		ConfigRoot:               configRoot,
-		RootfsRoot:               rootfsRoot,
-		BuildRoot:                buildRoot,
+		RootfsRoot:               filepath.Join(cwd, "data", "rootfs"),
+		BuildRoot:                filepath.Join(cwd, "data", "builds"),
 		StateDir:                 stateDirDefault,
 		LogDir:                   logDirDefault,
-		SessionMountTemplateRoot: getEnv("SESSION_MOUNT_TEMPLATE_ROOT", ""),
-		Engine:                   strings.TrimSpace(os.Getenv("ENGINE")),
-		DefaultCommandTimeout:    getEnvDuration("DEFAULT_COMMAND_TIMEOUT", 30*time.Second),
-		DeleteRootfsOnStop:       getEnvBool("DELETE_ROOTFS_ON_STOP", true),
-		HTTPAccessLogEnabled:     getEnvBool("HTTP_ACCESS_LOG_ENABLED", false),
-		HTTPErrorLogEnabled:      getEnvBool("HTTP_ERROR_LOG_ENABLED", false),
-		EnableExecLogPersist:     getEnvBool("ENABLE_EXEC_LOG_PERSIST", false),
-		ExecLogMaxOutputBytes:    getEnvInt("EXEC_LOG_MAX_OUTPUT_BYTES", 65536),
-		NetworkPolicyHelperImage: getEnv("NETWORK_POLICY_HELPER_IMAGE", "agent-container-hub/network-policy-helper:latest"),
-		DisplayTimezone: resolveDisplayTimezone(
-			strings.TrimSpace(os.Getenv("DISPLAY_TIMEZONE")),
-			strings.TrimSpace(os.Getenv("TZ")),
-		),
+		Engine:                   "auto",
+		DefaultCommandTimeout:    30 * time.Second,
+		DeleteRootfsOnStop:       true,
+		ExecLogMaxOutputBytes:    65536,
+		NetworkPolicyHelperImage: "agent-container-hub/network-policy-helper:latest",
+		DisplayTimezone:          resolveDisplayTimezone("", ""),
+	}
+	if err := applyHubFileConfig(&cfg, filepath.Join(cfg.ConfigRoot, hubConfigFileName)); err != nil {
+		return Config{}, err
+	}
+	applyEnvOverrides(&cfg)
+	if options.dataDir != "" {
+		cfg.StateDBPath = filepath.Join(options.dataDir, "hub.db")
+		cfg.RootfsRoot = filepath.Join(options.dataDir, "rootfs")
+		cfg.BuildRoot = filepath.Join(options.dataDir, "builds")
+	}
+	if options.bindAddr != "" {
+		cfg.BindAddr = options.bindAddr
 	}
 	if cfg.StateDBPath, err = absolutePath(cfg.StateDBPath); err != nil {
 		return Config{}, fmt.Errorf("normalize state db path: %w", err)
-	}
-	if cfg.ConfigRoot, err = absolutePath(cfg.ConfigRoot); err != nil {
-		return Config{}, fmt.Errorf("normalize config root: %w", err)
 	}
 	if cfg.RootfsRoot, err = absolutePath(cfg.RootfsRoot); err != nil {
 		return Config{}, fmt.Errorf("normalize rootfs root: %w", err)
@@ -138,6 +170,115 @@ func LoadWithArgs(args []string) (Config, error) {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+func applyHubFileConfig(cfg *Config, path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read hub config %s: %w", path, err)
+	}
+	var fileConfig hubFileConfig
+	if err := yaml.Unmarshal(data, &fileConfig); err != nil {
+		return fmt.Errorf("parse hub config %s: %w", path, err)
+	}
+	baseDir := filepath.Dir(path)
+	if err := applyHubServerConfig(cfg, fileConfig.Server); err != nil {
+		return fmt.Errorf("parse hub config %s: %w", path, err)
+	}
+	if fileConfig.Runtime.Engine != nil {
+		cfg.Engine = strings.TrimSpace(*fileConfig.Runtime.Engine)
+	}
+	if fileConfig.Runtime.NetworkPolicyHelperImage != nil {
+		cfg.NetworkPolicyHelperImage = strings.TrimSpace(*fileConfig.Runtime.NetworkPolicyHelperImage)
+	}
+	if fileConfig.Paths.StateDBPath != nil {
+		cfg.StateDBPath = resolveHubPath(baseDir, *fileConfig.Paths.StateDBPath)
+	}
+	if fileConfig.Paths.RootfsRoot != nil {
+		cfg.RootfsRoot = resolveHubPath(baseDir, *fileConfig.Paths.RootfsRoot)
+	}
+	if fileConfig.Paths.BuildRoot != nil {
+		cfg.BuildRoot = resolveHubPath(baseDir, *fileConfig.Paths.BuildRoot)
+	}
+	if fileConfig.Paths.SessionMountTemplateRoot != nil {
+		cfg.SessionMountTemplateRoot = resolveHubPath(baseDir, *fileConfig.Paths.SessionMountTemplateRoot)
+	}
+	if fileConfig.Execution.DefaultCommandTimeout != nil {
+		parsed, err := time.ParseDuration(strings.TrimSpace(*fileConfig.Execution.DefaultCommandTimeout))
+		if err != nil {
+			return fmt.Errorf("parse execution.default_command_timeout: %w", err)
+		}
+		cfg.DefaultCommandTimeout = parsed
+	}
+	if fileConfig.Execution.DeleteRootfsOnStop != nil {
+		cfg.DeleteRootfsOnStop = *fileConfig.Execution.DeleteRootfsOnStop
+	}
+	if fileConfig.Execution.LogPersist != nil {
+		cfg.EnableExecLogPersist = *fileConfig.Execution.LogPersist
+	}
+	if fileConfig.Execution.LogMaxOutputBytes != nil {
+		cfg.ExecLogMaxOutputBytes = *fileConfig.Execution.LogMaxOutputBytes
+	}
+	if fileConfig.HTTPLogs.AccessEnabled != nil {
+		cfg.HTTPAccessLogEnabled = *fileConfig.HTTPLogs.AccessEnabled
+	}
+	if fileConfig.HTTPLogs.ErrorEnabled != nil {
+		cfg.HTTPErrorLogEnabled = *fileConfig.HTTPLogs.ErrorEnabled
+	}
+	if fileConfig.UI.DisplayTimezone != nil {
+		cfg.DisplayTimezone = strings.TrimSpace(*fileConfig.UI.DisplayTimezone)
+	}
+	return nil
+}
+
+func applyHubServerConfig(cfg *Config, server hubServerConfig) error {
+	if server.Host == nil && server.Port == nil {
+		return nil
+	}
+	host, portValue, err := net.SplitHostPort(cfg.BindAddr)
+	if err != nil {
+		return fmt.Errorf("split default bind address: %w", err)
+	}
+	port, err := strconv.Atoi(portValue)
+	if err != nil {
+		return fmt.Errorf("parse default bind port: %w", err)
+	}
+	if server.Host != nil {
+		host = strings.TrimSpace(*server.Host)
+	}
+	if server.Port != nil {
+		if *server.Port < 0 || *server.Port > 65535 {
+			return fmt.Errorf("server.port must be between 0 and 65535")
+		}
+		port = *server.Port
+	}
+	cfg.BindAddr = net.JoinHostPort(host, strconv.Itoa(port))
+	return nil
+}
+
+func applyEnvOverrides(cfg *Config) {
+	cfg.AuthToken = strings.TrimSpace(os.Getenv("AUTH_TOKEN"))
+	cfg.BindAddr = getEnv("BIND_ADDR", cfg.BindAddr)
+	cfg.StateDBPath = getEnv("STATE_DB_PATH", cfg.StateDBPath)
+	cfg.RootfsRoot = getEnv("ROOTFS_ROOT", cfg.RootfsRoot)
+	cfg.BuildRoot = getEnv("BUILD_ROOT", cfg.BuildRoot)
+	cfg.SessionMountTemplateRoot = getEnv("SESSION_MOUNT_TEMPLATE_ROOT", cfg.SessionMountTemplateRoot)
+	cfg.Engine = getEnv("ENGINE", cfg.Engine)
+	cfg.DefaultCommandTimeout = getEnvDuration("DEFAULT_COMMAND_TIMEOUT", cfg.DefaultCommandTimeout)
+	cfg.DeleteRootfsOnStop = getEnvBool("DELETE_ROOTFS_ON_STOP", cfg.DeleteRootfsOnStop)
+	cfg.HTTPAccessLogEnabled = getEnvBool("HTTP_ACCESS_LOG_ENABLED", cfg.HTTPAccessLogEnabled)
+	cfg.HTTPErrorLogEnabled = getEnvBool("HTTP_ERROR_LOG_ENABLED", cfg.HTTPErrorLogEnabled)
+	cfg.EnableExecLogPersist = getEnvBool("ENABLE_EXEC_LOG_PERSIST", cfg.EnableExecLogPersist)
+	cfg.ExecLogMaxOutputBytes = getEnvInt("EXEC_LOG_MAX_OUTPUT_BYTES", cfg.ExecLogMaxOutputBytes)
+	cfg.NetworkPolicyHelperImage = getEnv("NETWORK_POLICY_HELPER_IMAGE", cfg.NetworkPolicyHelperImage)
+	displayTimezone := strings.TrimSpace(os.Getenv("DISPLAY_TIMEZONE"))
+	tz := strings.TrimSpace(os.Getenv("TZ"))
+	if displayTimezone != "" || tz != "" {
+		cfg.DisplayTimezone = resolveDisplayTimezone(displayTimezone, tz)
+	}
 }
 
 func (c Config) Validate() error {
@@ -271,4 +412,15 @@ func absolutePath(path string) (string, error) {
 	}
 	path = filepath.Clean(path)
 	return filepath.Abs(path)
+}
+
+func resolveHubPath(baseDir, path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path)
+	}
+	return filepath.Join(baseDir, path)
 }

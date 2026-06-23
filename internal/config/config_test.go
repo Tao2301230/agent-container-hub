@@ -3,8 +3,313 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func writeHubConfig(t *testing.T, configDir, body string) {
+	t.Helper()
+	configRoot := filepath.Join(configDir, "configs")
+	if err := os.MkdirAll(configRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(configRoot, "hub.yml"), []byte(body), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+}
+
+func clearConfigEnv(t *testing.T) {
+	t.Helper()
+	for _, key := range []string{
+		"AUTH_TOKEN",
+		"BIND_ADDR",
+		"STATE_DB_PATH",
+		"CONFIG_ROOT",
+		"ROOTFS_ROOT",
+		"BUILD_ROOT",
+		"SESSION_MOUNT_TEMPLATE_ROOT",
+		"ENGINE",
+		"DEFAULT_COMMAND_TIMEOUT",
+		"DELETE_ROOTFS_ON_STOP",
+		"HTTP_ACCESS_LOG_ENABLED",
+		"HTTP_ERROR_LOG_ENABLED",
+		"ENABLE_EXEC_LOG_PERSIST",
+		"EXEC_LOG_MAX_OUTPUT_BYTES",
+		"NETWORK_POLICY_HELPER_IMAGE",
+		"DISPLAY_TIMEZONE",
+		"TZ",
+	} {
+		t.Setenv(key, "")
+	}
+}
+
+func TestLoadDefaultsWithoutHubConfig(t *testing.T) {
+	clearConfigEnv(t)
+	previousWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	tempDir := t.TempDir()
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(previousWD)
+	})
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if cfg.BindAddr != "127.0.0.1:11960" {
+		t.Fatalf("BindAddr = %q, want default", cfg.BindAddr)
+	}
+	if cfg.Engine != "auto" {
+		t.Fatalf("Engine = %q, want auto", cfg.Engine)
+	}
+}
+
+func TestLoadReadsHubYAML(t *testing.T) {
+	clearConfigEnv(t)
+	configDir := t.TempDir()
+	writeHubConfig(t, configDir, `
+server:
+  host: 127.0.0.1
+  port: 18080
+runtime:
+  engine: podman
+  network_policy_helper_image: registry.example.com/helper:v2
+paths:
+  state_db_path: ../state/hub.db
+  rootfs_root: ../state/rootfs
+  build_root: ../state/builds
+  session_mount_template_root: ../templates
+execution:
+  default_command_timeout: 45s
+  delete_rootfs_on_stop: false
+  log_persist: true
+  log_max_output_bytes: 12345
+http_logs:
+  access_enabled: true
+  error_enabled: true
+ui:
+  display_timezone: UTC
+`)
+
+	cfg, err := LoadWithArgs([]string{"--config-dir", configDir})
+	if err != nil {
+		t.Fatalf("LoadWithArgs() error = %v", err)
+	}
+
+	if cfg.BindAddr != "127.0.0.1:18080" {
+		t.Fatalf("BindAddr = %q, want YAML host/port", cfg.BindAddr)
+	}
+	if cfg.Engine != "podman" {
+		t.Fatalf("Engine = %q, want podman", cfg.Engine)
+	}
+	if cfg.NetworkPolicyHelperImage != "registry.example.com/helper:v2" {
+		t.Fatalf("NetworkPolicyHelperImage = %q, want YAML value", cfg.NetworkPolicyHelperImage)
+	}
+	if want := filepath.Join(configDir, "state", "hub.db"); cfg.StateDBPath != want {
+		t.Fatalf("StateDBPath = %q, want %q", cfg.StateDBPath, want)
+	}
+	if want := filepath.Join(configDir, "state", "rootfs"); cfg.RootfsRoot != want {
+		t.Fatalf("RootfsRoot = %q, want %q", cfg.RootfsRoot, want)
+	}
+	if want := filepath.Join(configDir, "state", "builds"); cfg.BuildRoot != want {
+		t.Fatalf("BuildRoot = %q, want %q", cfg.BuildRoot, want)
+	}
+	if want := filepath.Join(configDir, "templates"); cfg.SessionMountTemplateRoot != want {
+		t.Fatalf("SessionMountTemplateRoot = %q, want %q", cfg.SessionMountTemplateRoot, want)
+	}
+	if cfg.DefaultCommandTimeout.String() != "45s" {
+		t.Fatalf("DefaultCommandTimeout = %s, want 45s", cfg.DefaultCommandTimeout)
+	}
+	if cfg.DeleteRootfsOnStop {
+		t.Fatal("DeleteRootfsOnStop = true, want false")
+	}
+	if !cfg.EnableExecLogPersist {
+		t.Fatal("EnableExecLogPersist = false, want true")
+	}
+	if cfg.ExecLogMaxOutputBytes != 12345 {
+		t.Fatalf("ExecLogMaxOutputBytes = %d, want 12345", cfg.ExecLogMaxOutputBytes)
+	}
+	if !cfg.HTTPAccessLogEnabled || !cfg.HTTPErrorLogEnabled {
+		t.Fatalf("HTTP log flags = %t/%t, want true/true", cfg.HTTPAccessLogEnabled, cfg.HTTPErrorLogEnabled)
+	}
+	if cfg.DisplayTimezone != "UTC" {
+		t.Fatalf("DisplayTimezone = %q, want UTC", cfg.DisplayTimezone)
+	}
+}
+
+func TestLoadEnvOverridesHubYAML(t *testing.T) {
+	clearConfigEnv(t)
+	previousWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	tempDir := t.TempDir()
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(previousWD)
+	})
+	currentWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() after Chdir error = %v", err)
+	}
+	configDir := t.TempDir()
+	writeHubConfig(t, configDir, `
+server:
+  host: 127.0.0.1
+  port: 18080
+runtime:
+  engine: podman
+paths:
+  state_db_path: ../state/hub.db
+execution:
+  log_persist: false
+ui:
+  display_timezone: UTC
+`)
+	t.Setenv("BIND_ADDR", "127.0.0.1:19090")
+	t.Setenv("ENGINE", "docker")
+	t.Setenv("STATE_DB_PATH", "./env/hub.db")
+	t.Setenv("ROOTFS_ROOT", "./env/rootfs")
+	t.Setenv("BUILD_ROOT", "./env/builds")
+	t.Setenv("ENABLE_EXEC_LOG_PERSIST", "true")
+	t.Setenv("DISPLAY_TIMEZONE", "Asia/Tokyo")
+
+	cfg, err := LoadWithArgs([]string{"--config-dir", configDir})
+	if err != nil {
+		t.Fatalf("LoadWithArgs() error = %v", err)
+	}
+
+	if cfg.BindAddr != "127.0.0.1:19090" {
+		t.Fatalf("BindAddr = %q, want env override", cfg.BindAddr)
+	}
+	if cfg.Engine != "docker" {
+		t.Fatalf("Engine = %q, want docker", cfg.Engine)
+	}
+	if want := filepath.Join(currentWD, "env", "hub.db"); cfg.StateDBPath != want {
+		t.Fatalf("StateDBPath = %q, want %q", cfg.StateDBPath, want)
+	}
+	if !cfg.EnableExecLogPersist {
+		t.Fatal("EnableExecLogPersist = false, want env override")
+	}
+	if cfg.DisplayTimezone != "Asia/Tokyo" {
+		t.Fatalf("DisplayTimezone = %q, want env override", cfg.DisplayTimezone)
+	}
+}
+
+func TestLoadCLIOverridesEnvAndHubYAML(t *testing.T) {
+	clearConfigEnv(t)
+	configDir := t.TempDir()
+	dataDir := t.TempDir()
+	writeHubConfig(t, configDir, `
+server:
+  host: 127.0.0.1
+  port: 18080
+paths:
+  state_db_path: ../state/hub.db
+  rootfs_root: ../state/rootfs
+  build_root: ../state/builds
+`)
+	t.Setenv("BIND_ADDR", "127.0.0.1:19090")
+	t.Setenv("STATE_DB_PATH", "/tmp/ignored.db")
+	t.Setenv("ROOTFS_ROOT", "/tmp/ignored-rootfs")
+	t.Setenv("BUILD_ROOT", "/tmp/ignored-builds")
+
+	cfg, err := LoadWithArgs([]string{
+		"--config-dir", configDir,
+		"--data-dir", dataDir,
+		"--bind-addr", "127.0.0.1:20000",
+	})
+	if err != nil {
+		t.Fatalf("LoadWithArgs() error = %v", err)
+	}
+
+	if cfg.BindAddr != "127.0.0.1:20000" {
+		t.Fatalf("BindAddr = %q, want CLI override", cfg.BindAddr)
+	}
+	if want := filepath.Join(dataDir, "hub.db"); cfg.StateDBPath != want {
+		t.Fatalf("StateDBPath = %q, want %q", cfg.StateDBPath, want)
+	}
+	if want := filepath.Join(dataDir, "rootfs"); cfg.RootfsRoot != want {
+		t.Fatalf("RootfsRoot = %q, want %q", cfg.RootfsRoot, want)
+	}
+	if want := filepath.Join(dataDir, "builds"); cfg.BuildRoot != want {
+		t.Fatalf("BuildRoot = %q, want %q", cfg.BuildRoot, want)
+	}
+}
+
+func TestLoadRejectsInvalidHubPort(t *testing.T) {
+	clearConfigEnv(t)
+	configDir := t.TempDir()
+	writeHubConfig(t, configDir, `
+server:
+  port: 70000
+`)
+
+	_, err := LoadWithArgs([]string{"--config-dir", configDir})
+	if err == nil {
+		t.Fatal("LoadWithArgs() error = nil, want invalid port error")
+	}
+	if !strings.Contains(err.Error(), "server.port") {
+		t.Fatalf("LoadWithArgs() error = %q, want server.port", err)
+	}
+}
+
+func TestLoadRejectsInvalidHubDuration(t *testing.T) {
+	clearConfigEnv(t)
+	configDir := t.TempDir()
+	writeHubConfig(t, configDir, `
+execution:
+  default_command_timeout: nope
+`)
+
+	_, err := LoadWithArgs([]string{"--config-dir", configDir})
+	if err == nil {
+		t.Fatal("LoadWithArgs() error = nil, want invalid duration error")
+	}
+	if !strings.Contains(err.Error(), "execution.default_command_timeout") {
+		t.Fatalf("LoadWithArgs() error = %q, want execution.default_command_timeout", err)
+	}
+}
+
+func TestLoadRejectsInvalidHubDisplayTimezone(t *testing.T) {
+	clearConfigEnv(t)
+	configDir := t.TempDir()
+	writeHubConfig(t, configDir, `
+ui:
+  display_timezone: NotA/Real_Timezone
+`)
+
+	_, err := LoadWithArgs([]string{"--config-dir", configDir})
+	if err == nil {
+		t.Fatal("LoadWithArgs() error = nil, want invalid timezone")
+	}
+}
+
+func TestLoadRejectsRemoteHubHostWithoutAuthToken(t *testing.T) {
+	clearConfigEnv(t)
+	configDir := t.TempDir()
+	writeHubConfig(t, configDir, `
+server:
+  host: 0.0.0.0
+  port: 11960
+`)
+
+	_, err := LoadWithArgs([]string{"--config-dir", configDir})
+	if err == nil {
+		t.Fatal("LoadWithArgs() error = nil, want missing auth token error")
+	}
+	if !strings.Contains(err.Error(), "AUTH_TOKEN is required") {
+		t.Fatalf("LoadWithArgs() error = %q, want auth token error", err)
+	}
+}
 
 func TestLoadNormalizesRelativePaths(t *testing.T) {
 	previousWD, err := os.Getwd()
