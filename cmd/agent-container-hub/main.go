@@ -39,6 +39,12 @@ func main() {
 	if err := os.MkdirAll(cfg.ConfigRoot, 0o755); err != nil {
 		log.Fatalf("create config root: %v", err)
 	}
+	if err := os.MkdirAll(cfg.StateDir, 0o755); err != nil {
+		log.Fatalf("create state dir: %v", err)
+	}
+	if err := os.MkdirAll(cfg.LogDir, 0o755); err != nil {
+		log.Fatalf("create log dir: %v", err)
+	}
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	probeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

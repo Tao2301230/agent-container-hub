@@ -273,12 +273,13 @@ EOF
   local output
   output="$(
     cd "$bundle_dir" &&
-      SERVICE_CONFIG_DIR="$config_dir" \
-      SERVICE_DATA_DIR="$data_dir" \
-      SERVICE_STATE_DIR="$state_dir" \
-      SERVICE_LOG_DIR="$log_dir" \
       PATH="$bundle_dir/bin:$SAFE_PATH" \
-      /bin/bash ./start.sh --daemon 2>&1
+      /bin/bash ./start.sh --daemon \
+        --config-dir "$config_dir" \
+        --data-dir "$data_dir" \
+        --state-dir "$state_dir" \
+        --log-dir "$log_dir" \
+        --bind-addr 127.0.0.1:11960 2>&1
   )"
   assert_contains "$output" "started agent-container-hub in daemon mode"
   assert_contains "$(cat "$config_dir/configs/environments/shell/environment.yml")" "custom-shell"
@@ -288,10 +289,10 @@ EOF
 
   output="$(
     cd "$bundle_dir" &&
-      SERVICE_STATE_DIR="$state_dir" \
-      SERVICE_LOG_DIR="$log_dir" \
       PATH="$bundle_dir/bin:$SAFE_PATH" \
-      /bin/bash ./stop.sh 2>&1
+      /bin/bash ./stop.sh \
+        --state-dir "$state_dir" \
+        --log-dir "$log_dir" 2>&1
   )"
   assert_contains "$output" "stopped agent-container-hub"
 }

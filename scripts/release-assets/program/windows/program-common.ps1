@@ -5,17 +5,79 @@ $Script:BundleRoot = Split-Path -Parent $Script:ProgramCommonDir
 $Script:AppName = 'agent-container-hub'
 $Script:ManifestFile = Join-Path $Script:BundleRoot 'manifest.json'
 $Script:EnvExampleFile = Join-Path $Script:BundleRoot '.env.example'
-$Script:EnvFile = Join-Path $(if ($env:SERVICE_CONFIG_DIR) { $env:SERVICE_CONFIG_DIR } else { $Script:BundleRoot }) '.env'
 $Script:BackendBin = Join-Path (Join-Path $Script:BundleRoot 'backend') 'agent-container-hub.exe'
-$Script:ConfigEnvDir = Join-Path (Join-Path $(if ($env:SERVICE_CONFIG_DIR) { $env:SERVICE_CONFIG_DIR } else { $Script:BundleRoot }) 'configs') 'environments'
-$Script:DataDir = if ($env:SERVICE_DATA_DIR) { $env:SERVICE_DATA_DIR } else { Join-Path $Script:BundleRoot 'data' }
-$Script:RootfsDir = Join-Path $Script:DataDir 'rootfs'
-$Script:BuildDir = Join-Path $Script:DataDir 'builds'
-$Script:RunDir = if ($env:SERVICE_STATE_DIR) { $env:SERVICE_STATE_DIR } else { Join-Path $Script:BundleRoot 'run' }
-$Script:LogDir = if ($env:SERVICE_LOG_DIR) { $env:SERVICE_LOG_DIR } else { $Script:RunDir }
-$Script:PidFile = Join-Path $Script:RunDir 'agent-container-hub.pid'
-$Script:LogFile = Join-Path $Script:LogDir 'agent-container-hub.log'
-$Script:ErrorLogFile = Join-Path $Script:LogDir 'agent-container-hub.stderr.log'
+$Script:ConfigDir = $Script:BundleRoot
+$Script:DataDir = Join-Path $Script:BundleRoot 'data'
+$Script:RunDir = Join-Path $Script:BundleRoot 'run'
+$Script:LogDir = $Script:RunDir
+$Script:ProgramBindAddr = ''
+$Script:EnvFile = ''
+$Script:ConfigEnvDir = ''
+$Script:RootfsDir = ''
+$Script:BuildDir = ''
+$Script:PidFile = ''
+$Script:LogFile = ''
+$Script:ErrorLogFile = ''
+
+function Update-ProgramLayoutPaths {
+  $Script:EnvFile = Join-Path $Script:ConfigDir '.env'
+  $Script:ConfigEnvDir = Join-Path (Join-Path $Script:ConfigDir 'configs') 'environments'
+  $Script:RootfsDir = Join-Path $Script:DataDir 'rootfs'
+  $Script:BuildDir = Join-Path $Script:DataDir 'builds'
+  $Script:PidFile = Join-Path $Script:RunDir 'agent-container-hub.pid'
+  $Script:LogFile = Join-Path $Script:LogDir 'agent-container-hub.log'
+  $Script:ErrorLogFile = Join-Path $Script:LogDir 'agent-container-hub.stderr.log'
+}
+
+function Set-ProgramLayoutArgs {
+  param([string[]]$Arguments)
+
+  for ($i = 0; $i -lt $Arguments.Count; $i++) {
+    $arg = $Arguments[$i]
+    switch ($arg) {
+      '--config-dir' {
+        if ($i + 1 -ge $Arguments.Count) { Fail-Program 'missing value for --config-dir' }
+        $i++
+        $Script:ConfigDir = $Arguments[$i]
+        continue
+      }
+      '--data-dir' {
+        if ($i + 1 -ge $Arguments.Count) { Fail-Program 'missing value for --data-dir' }
+        $i++
+        $Script:DataDir = $Arguments[$i]
+        continue
+      }
+      '--state-dir' {
+        if ($i + 1 -ge $Arguments.Count) { Fail-Program 'missing value for --state-dir' }
+        $previousDefaultLogDir = Join-Path $Script:BundleRoot 'run'
+        $i++
+        $Script:RunDir = $Arguments[$i]
+        if ($Script:LogDir -eq $previousDefaultLogDir) {
+          $Script:LogDir = $Script:RunDir
+        }
+        continue
+      }
+      '--log-dir' {
+        if ($i + 1 -ge $Arguments.Count) { Fail-Program 'missing value for --log-dir' }
+        $i++
+        $Script:LogDir = $Arguments[$i]
+        continue
+      }
+      '--bind-addr' {
+        if ($i + 1 -ge $Arguments.Count) { Fail-Program 'missing value for --bind-addr' }
+        $i++
+        $Script:ProgramBindAddr = $Arguments[$i]
+        continue
+      }
+      default {
+        Fail-Program "unsupported argument: $arg"
+      }
+    }
+  }
+  Update-ProgramLayoutPaths
+}
+
+Update-ProgramLayoutPaths
 
 function Fail-Program([string]$Message) {
   throw "[program] $Message"
@@ -143,6 +205,13 @@ function Start-ProgramBackend {
     [switch]$Daemon
   )
 
+  $backendArgs = @('--config-dir', $Script:ConfigDir, '--data-dir', $Script:DataDir, '--state-dir', $Script:RunDir, '--log-dir', $Script:LogDir)
+  if ($Script:ProgramBindAddr) {
+    $backendArgs += @('--bind-addr', $Script:ProgramBindAddr)
+  } elseif ($env:BIND_ADDR) {
+    $backendArgs += @('--bind-addr', $env:BIND_ADDR)
+  }
+
   if ($Daemon) {
     Clear-StaleProgramPid
     if (Test-Path -LiteralPath $Script:LogFile) {
@@ -155,7 +224,7 @@ function Start-ProgramBackend {
     } else {
       New-Item -ItemType File -Path $Script:ErrorLogFile -Force | Out-Null
     }
-    $proc = Start-Process -FilePath $Script:BackendBin -WorkingDirectory $Script:BundleRoot -WindowStyle Hidden -RedirectStandardOutput $Script:LogFile -RedirectStandardError $Script:ErrorLogFile -PassThru
+    $proc = Start-Process -FilePath $Script:BackendBin -ArgumentList $backendArgs -WorkingDirectory $Script:BundleRoot -WindowStyle Hidden -RedirectStandardOutput $Script:LogFile -RedirectStandardError $Script:ErrorLogFile -PassThru
     $proc.Id | Set-Content -LiteralPath $Script:PidFile
     Start-Sleep -Seconds 1
     if ($proc.HasExited) {
@@ -168,7 +237,7 @@ function Start-ProgramBackend {
     return
   }
 
-  & $Script:BackendBin
+  & $Script:BackendBin @backendArgs
 }
 
 function Stop-ProgramBackend {

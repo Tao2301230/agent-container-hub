@@ -95,7 +95,7 @@ func TestLoadUsesRenamedDefaultStateDBPath(t *testing.T) {
 	}
 }
 
-func TestLoadUsesServiceConfigAndDataDirsForDefaults(t *testing.T) {
+func TestLoadUsesCLIServiceLayoutDirsForDefaults(t *testing.T) {
 	previousWD, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("Getwd() error = %v", err)
@@ -110,14 +110,20 @@ func TestLoadUsesServiceConfigAndDataDirsForDefaults(t *testing.T) {
 
 	configDir := t.TempDir()
 	dataDir := t.TempDir()
-	t.Setenv("SERVICE_CONFIG_DIR", configDir)
-	t.Setenv("SERVICE_DATA_DIR", dataDir)
+	stateDir := t.TempDir()
+	logDir := t.TempDir()
 	t.Setenv("CONFIG_ROOT", "")
 	t.Setenv("STATE_DB_PATH", "")
 	t.Setenv("ROOTFS_ROOT", "")
 	t.Setenv("BUILD_ROOT", "")
 
-	cfg, err := Load()
+	cfg, err := LoadWithArgs([]string{
+		"--config-dir", configDir,
+		"--data-dir", dataDir,
+		"--state-dir", stateDir,
+		"--log-dir", logDir,
+		"--bind-addr", "127.0.0.1:11960",
+	})
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -133,6 +139,50 @@ func TestLoadUsesServiceConfigAndDataDirsForDefaults(t *testing.T) {
 	}
 	if want := filepath.Join(dataDir, "builds"); cfg.BuildRoot != want {
 		t.Fatalf("BuildRoot = %q, want %q", cfg.BuildRoot, want)
+	}
+	if cfg.StateDir != stateDir {
+		t.Fatalf("StateDir = %q, want %q", cfg.StateDir, stateDir)
+	}
+	if cfg.LogDir != logDir {
+		t.Fatalf("LogDir = %q, want %q", cfg.LogDir, logDir)
+	}
+	if cfg.BindAddr != "127.0.0.1:11960" {
+		t.Fatalf("BindAddr = %q, want explicit flag", cfg.BindAddr)
+	}
+}
+
+func TestLoadCLIServiceLayoutDirsOverridePathEnv(t *testing.T) {
+	configDir := t.TempDir()
+	dataDir := t.TempDir()
+	t.Setenv("CONFIG_ROOT", "/tmp/ignored-config")
+	t.Setenv("STATE_DB_PATH", "/tmp/ignored.db")
+	t.Setenv("ROOTFS_ROOT", "/tmp/ignored-rootfs")
+	t.Setenv("BUILD_ROOT", "/tmp/ignored-builds")
+	t.Setenv("BIND_ADDR", "127.0.0.1:8080")
+
+	cfg, err := LoadWithArgs([]string{
+		"--config-dir", configDir,
+		"--data-dir", dataDir,
+		"--bind-addr", "127.0.0.1:11960",
+	})
+	if err != nil {
+		t.Fatalf("LoadWithArgs() error = %v", err)
+	}
+
+	if want := filepath.Join(configDir, "configs"); cfg.ConfigRoot != want {
+		t.Fatalf("ConfigRoot = %q, want %q", cfg.ConfigRoot, want)
+	}
+	if want := filepath.Join(dataDir, "hub.db"); cfg.StateDBPath != want {
+		t.Fatalf("StateDBPath = %q, want %q", cfg.StateDBPath, want)
+	}
+	if want := filepath.Join(dataDir, "rootfs"); cfg.RootfsRoot != want {
+		t.Fatalf("RootfsRoot = %q, want %q", cfg.RootfsRoot, want)
+	}
+	if want := filepath.Join(dataDir, "builds"); cfg.BuildRoot != want {
+		t.Fatalf("BuildRoot = %q, want %q", cfg.BuildRoot, want)
+	}
+	if cfg.BindAddr != "127.0.0.1:11960" {
+		t.Fatalf("BindAddr = %q, want flag value", cfg.BindAddr)
 	}
 }
 
