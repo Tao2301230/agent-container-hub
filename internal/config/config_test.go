@@ -22,6 +22,8 @@ func clearConfigEnv(t *testing.T) {
 	t.Helper()
 	for _, key := range []string{
 		"AUTH_TOKEN",
+		"SERVER_HOST",
+		"SERVER_PORT",
 		"BIND_ADDR",
 		"STATE_DB_PATH",
 		"CONFIG_ROOT",
@@ -40,6 +42,49 @@ func clearConfigEnv(t *testing.T) {
 		"TZ",
 	} {
 		t.Setenv(key, "")
+	}
+}
+
+func TestLoadUsesServerHostAndPortEnv(t *testing.T) {
+	clearConfigEnv(t)
+	t.Setenv("SERVER_HOST", "127.0.0.1")
+	t.Setenv("SERVER_PORT", "18080")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.BindAddr != "127.0.0.1:18080" {
+		t.Fatalf("BindAddr = %q, want SERVER_HOST/SERVER_PORT", cfg.BindAddr)
+	}
+}
+
+func TestLoadBindAddrOverridesServerHostAndPortEnv(t *testing.T) {
+	clearConfigEnv(t)
+	t.Setenv("SERVER_HOST", "127.0.0.1")
+	t.Setenv("SERVER_PORT", "18080")
+	t.Setenv("BIND_ADDR", "127.0.0.1:19090")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.BindAddr != "127.0.0.1:19090" {
+		t.Fatalf("BindAddr = %q, want BIND_ADDR override", cfg.BindAddr)
+	}
+}
+
+func TestLoadBindAddrSkipsInvalidServerPortEnv(t *testing.T) {
+	clearConfigEnv(t)
+	t.Setenv("SERVER_PORT", "not-a-port")
+	t.Setenv("BIND_ADDR", "127.0.0.1:19090")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.BindAddr != "127.0.0.1:19090" {
+		t.Fatalf("BindAddr = %q, want BIND_ADDR override", cfg.BindAddr)
 	}
 }
 
@@ -62,7 +107,7 @@ func TestLoadDefaultsWithoutHubConfig(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	if cfg.BindAddr != "127.0.0.1:11960" {
+	if cfg.BindAddr != "127.0.0.1:8080" {
 		t.Fatalf("BindAddr = %q, want default", cfg.BindAddr)
 	}
 	if cfg.Engine != "auto" {
@@ -74,11 +119,7 @@ func TestLoadReadsHubYAML(t *testing.T) {
 	clearConfigEnv(t)
 	configDir := t.TempDir()
 	writeHubConfig(t, configDir, `
-server:
-  host: 127.0.0.1
-  port: 18080
 runtime:
-  engine: podman
   network_policy_helper_image: registry.example.com/helper:v2
 paths:
   state_db_path: ../state/hub.db
@@ -102,11 +143,11 @@ ui:
 		t.Fatalf("LoadWithArgs() error = %v", err)
 	}
 
-	if cfg.BindAddr != "127.0.0.1:18080" {
-		t.Fatalf("BindAddr = %q, want YAML host/port", cfg.BindAddr)
+	if cfg.BindAddr != "127.0.0.1:8080" {
+		t.Fatalf("BindAddr = %q, want default", cfg.BindAddr)
 	}
-	if cfg.Engine != "podman" {
-		t.Fatalf("Engine = %q, want podman", cfg.Engine)
+	if cfg.Engine != "auto" {
+		t.Fatalf("Engine = %q, want default", cfg.Engine)
 	}
 	if cfg.NetworkPolicyHelperImage != "registry.example.com/helper:v2" {
 		t.Fatalf("NetworkPolicyHelperImage = %q, want YAML value", cfg.NetworkPolicyHelperImage)
@@ -143,6 +184,41 @@ ui:
 	}
 }
 
+func TestLoadIgnoresHubYAMLServerConfig(t *testing.T) {
+	clearConfigEnv(t)
+	configDir := t.TempDir()
+	writeHubConfig(t, configDir, `
+server:
+  host: 0.0.0.0
+  port: 18080
+`)
+
+	cfg, err := LoadWithArgs([]string{"--config-dir", configDir})
+	if err != nil {
+		t.Fatalf("LoadWithArgs() error = %v", err)
+	}
+	if cfg.BindAddr != "127.0.0.1:8080" {
+		t.Fatalf("BindAddr = %q, want hub.yml server config ignored", cfg.BindAddr)
+	}
+}
+
+func TestLoadIgnoresHubYAMLEngine(t *testing.T) {
+	clearConfigEnv(t)
+	configDir := t.TempDir()
+	writeHubConfig(t, configDir, `
+runtime:
+  engine: podman
+`)
+
+	cfg, err := LoadWithArgs([]string{"--config-dir", configDir})
+	if err != nil {
+		t.Fatalf("LoadWithArgs() error = %v", err)
+	}
+	if cfg.Engine != "auto" {
+		t.Fatalf("Engine = %q, want hub.yml runtime.engine ignored", cfg.Engine)
+	}
+}
+
 func TestLoadEnvOverridesHubYAML(t *testing.T) {
 	clearConfigEnv(t)
 	previousWD, err := os.Getwd()
@@ -162,11 +238,6 @@ func TestLoadEnvOverridesHubYAML(t *testing.T) {
 	}
 	configDir := t.TempDir()
 	writeHubConfig(t, configDir, `
-server:
-  host: 127.0.0.1
-  port: 18080
-runtime:
-  engine: podman
 paths:
   state_db_path: ../state/hub.db
 execution:
@@ -181,6 +252,8 @@ ui:
 	t.Setenv("BUILD_ROOT", "./env/builds")
 	t.Setenv("ENABLE_EXEC_LOG_PERSIST", "true")
 	t.Setenv("DISPLAY_TIMEZONE", "Asia/Tokyo")
+	t.Setenv("SERVER_HOST", "127.0.0.1")
+	t.Setenv("SERVER_PORT", "18080")
 
 	cfg, err := LoadWithArgs([]string{"--config-dir", configDir})
 	if err != nil {
@@ -204,14 +277,24 @@ ui:
 	}
 }
 
+func TestLoadUsesEngineEnv(t *testing.T) {
+	clearConfigEnv(t)
+	t.Setenv("ENGINE", "podman")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Engine != "podman" {
+		t.Fatalf("Engine = %q, want env override", cfg.Engine)
+	}
+}
+
 func TestLoadCLIOverridesEnvAndHubYAML(t *testing.T) {
 	clearConfigEnv(t)
 	configDir := t.TempDir()
 	dataDir := t.TempDir()
 	writeHubConfig(t, configDir, `
-server:
-  host: 127.0.0.1
-  port: 18080
 paths:
   state_db_path: ../state/hub.db
   rootfs_root: ../state/rootfs
@@ -221,6 +304,8 @@ paths:
 	t.Setenv("STATE_DB_PATH", "/tmp/ignored.db")
 	t.Setenv("ROOTFS_ROOT", "/tmp/ignored-rootfs")
 	t.Setenv("BUILD_ROOT", "/tmp/ignored-builds")
+	t.Setenv("SERVER_HOST", "127.0.0.1")
+	t.Setenv("SERVER_PORT", "18080")
 
 	cfg, err := LoadWithArgs([]string{
 		"--config-dir", configDir,
@@ -245,20 +330,16 @@ paths:
 	}
 }
 
-func TestLoadRejectsInvalidHubPort(t *testing.T) {
+func TestLoadRejectsInvalidServerPortEnv(t *testing.T) {
 	clearConfigEnv(t)
-	configDir := t.TempDir()
-	writeHubConfig(t, configDir, `
-server:
-  port: 70000
-`)
+	t.Setenv("SERVER_PORT", "70000")
 
-	_, err := LoadWithArgs([]string{"--config-dir", configDir})
+	_, err := Load()
 	if err == nil {
 		t.Fatal("LoadWithArgs() error = nil, want invalid port error")
 	}
-	if !strings.Contains(err.Error(), "server.port") {
-		t.Fatalf("LoadWithArgs() error = %q, want server.port", err)
+	if !strings.Contains(err.Error(), "SERVER_PORT") {
+		t.Fatalf("LoadWithArgs() error = %q, want SERVER_PORT", err)
 	}
 }
 
@@ -293,16 +374,12 @@ ui:
 	}
 }
 
-func TestLoadRejectsRemoteHubHostWithoutAuthToken(t *testing.T) {
+func TestLoadRejectsRemoteServerHostWithoutAuthToken(t *testing.T) {
 	clearConfigEnv(t)
-	configDir := t.TempDir()
-	writeHubConfig(t, configDir, `
-server:
-  host: 0.0.0.0
-  port: 11960
-`)
+	t.Setenv("SERVER_HOST", "0.0.0.0")
+	t.Setenv("SERVER_PORT", "8080")
 
-	_, err := LoadWithArgs([]string{"--config-dir", configDir})
+	_, err := Load()
 	if err == nil {
 		t.Fatal("LoadWithArgs() error = nil, want missing auth token error")
 	}
@@ -312,6 +389,7 @@ server:
 }
 
 func TestLoadNormalizesRelativePaths(t *testing.T) {
+	clearConfigEnv(t)
 	previousWD, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("Getwd() error = %v", err)
@@ -357,6 +435,7 @@ func TestLoadNormalizesRelativePaths(t *testing.T) {
 }
 
 func TestLoadUsesRenamedDefaultStateDBPath(t *testing.T) {
+	clearConfigEnv(t)
 	previousWD, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("Getwd() error = %v", err)
@@ -401,6 +480,7 @@ func TestLoadUsesRenamedDefaultStateDBPath(t *testing.T) {
 }
 
 func TestLoadUsesCLIServiceLayoutDirsForDefaults(t *testing.T) {
+	clearConfigEnv(t)
 	previousWD, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("Getwd() error = %v", err)
@@ -427,7 +507,7 @@ func TestLoadUsesCLIServiceLayoutDirsForDefaults(t *testing.T) {
 		"--data-dir", dataDir,
 		"--state-dir", stateDir,
 		"--log-dir", logDir,
-		"--bind-addr", "127.0.0.1:11960",
+		"--bind-addr", "127.0.0.1:8080",
 	})
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
@@ -451,12 +531,13 @@ func TestLoadUsesCLIServiceLayoutDirsForDefaults(t *testing.T) {
 	if cfg.LogDir != logDir {
 		t.Fatalf("LogDir = %q, want %q", cfg.LogDir, logDir)
 	}
-	if cfg.BindAddr != "127.0.0.1:11960" {
+	if cfg.BindAddr != "127.0.0.1:8080" {
 		t.Fatalf("BindAddr = %q, want explicit flag", cfg.BindAddr)
 	}
 }
 
 func TestLoadCLIServiceLayoutDirsOverridePathEnv(t *testing.T) {
+	clearConfigEnv(t)
 	configDir := t.TempDir()
 	dataDir := t.TempDir()
 	t.Setenv("CONFIG_ROOT", "/tmp/ignored-config")
@@ -468,7 +549,7 @@ func TestLoadCLIServiceLayoutDirsOverridePathEnv(t *testing.T) {
 	cfg, err := LoadWithArgs([]string{
 		"--config-dir", configDir,
 		"--data-dir", dataDir,
-		"--bind-addr", "127.0.0.1:11960",
+		"--bind-addr", "127.0.0.1:8080",
 	})
 	if err != nil {
 		t.Fatalf("LoadWithArgs() error = %v", err)
@@ -486,12 +567,13 @@ func TestLoadCLIServiceLayoutDirsOverridePathEnv(t *testing.T) {
 	if want := filepath.Join(dataDir, "builds"); cfg.BuildRoot != want {
 		t.Fatalf("BuildRoot = %q, want %q", cfg.BuildRoot, want)
 	}
-	if cfg.BindAddr != "127.0.0.1:11960" {
+	if cfg.BindAddr != "127.0.0.1:8080" {
 		t.Fatalf("BindAddr = %q, want flag value", cfg.BindAddr)
 	}
 }
 
 func TestLoadParsesHTTPLogFlags(t *testing.T) {
+	clearConfigEnv(t)
 	t.Setenv("HTTP_ACCESS_LOG_ENABLED", "true")
 	t.Setenv("HTTP_ERROR_LOG_ENABLED", "1")
 
@@ -508,6 +590,7 @@ func TestLoadParsesHTTPLogFlags(t *testing.T) {
 }
 
 func TestLoadParsesDeleteRootfsOnStop(t *testing.T) {
+	clearConfigEnv(t)
 	t.Setenv("DELETE_ROOTFS_ON_STOP", "false")
 
 	cfg, err := Load()
@@ -520,6 +603,7 @@ func TestLoadParsesDeleteRootfsOnStop(t *testing.T) {
 }
 
 func TestLoadNetworkPolicyHelperImage(t *testing.T) {
+	clearConfigEnv(t)
 	t.Setenv("NETWORK_POLICY_HELPER_IMAGE", "")
 
 	cfg, err := Load()
@@ -541,6 +625,7 @@ func TestLoadNetworkPolicyHelperImage(t *testing.T) {
 }
 
 func TestLoadRejectsRemovedLocalEngine(t *testing.T) {
+	clearConfigEnv(t)
 	t.Setenv("ENGINE", "local")
 
 	_, err := Load()
@@ -553,6 +638,7 @@ func TestLoadRejectsRemovedLocalEngine(t *testing.T) {
 }
 
 func TestLoadDisplayTimezoneOverride(t *testing.T) {
+	clearConfigEnv(t)
 	t.Setenv("DISPLAY_TIMEZONE", "Asia/Tokyo")
 
 	cfg, err := Load()
@@ -565,6 +651,7 @@ func TestLoadDisplayTimezoneOverride(t *testing.T) {
 }
 
 func TestLoadDisplayTimezoneFallsBackToTZEnv(t *testing.T) {
+	clearConfigEnv(t)
 	t.Setenv("DISPLAY_TIMEZONE", "")
 	t.Setenv("TZ", "Europe/Berlin")
 
@@ -578,6 +665,7 @@ func TestLoadDisplayTimezoneFallsBackToTZEnv(t *testing.T) {
 }
 
 func TestLoadDisplayTimezonePrefersDisplayTimezoneOverTZ(t *testing.T) {
+	clearConfigEnv(t)
 	t.Setenv("DISPLAY_TIMEZONE", "America/New_York")
 	t.Setenv("TZ", "Europe/Berlin")
 
@@ -591,6 +679,7 @@ func TestLoadDisplayTimezonePrefersDisplayTimezoneOverTZ(t *testing.T) {
 }
 
 func TestLoadRejectsInvalidDisplayTimezone(t *testing.T) {
+	clearConfigEnv(t)
 	t.Setenv("DISPLAY_TIMEZONE", "NotA/Real_Timezone")
 
 	_, err := Load()

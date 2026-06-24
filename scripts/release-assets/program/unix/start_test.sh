@@ -45,16 +45,21 @@ EOF
 name: shell
 EOF
   cat >"$bundle_dir/configs/hub.example.yml" <<'EOF'
-server:
-  host: 127.0.0.1
-  port: 11960
 runtime:
-  engine: auto
+  network_policy_helper_image: agent-container-hub/network-policy-helper:latest
 EOF
-  cat >"$bundle_dir/.env" <<'EOF'
+  cat >"$bundle_dir/.env.example" <<'EOF'
+# HTTP listen host and port.
+# SERVER_HOST=127.0.0.1
+# SERVER_PORT=8080
+
+# Container engine: auto, docker, or podman.
+# ENGINE=auto
+
+# Required when SERVER_HOST is not localhost/loopback.
 # AUTH_TOKEN=
 EOF
-  cp "$bundle_dir/.env" "$bundle_dir/.env.example"
+  cp "$bundle_dir/.env.example" "$bundle_dir/.env"
   cat >"$bundle_dir/backend/agent-container-hub" <<'EOF'
 #!/usr/bin/env bash
 sleep 5
@@ -83,7 +88,20 @@ test_deploy_initializes_env_and_hub_config() {
   assert_contains "$output" "bundle validated"
   [[ -f "$bundle_dir/.env" ]] || { echo "expected .env to be created" >&2; exit 1; }
   [[ -f "$bundle_dir/configs/hub.yml" ]] || { echo "expected configs/hub.yml to be created" >&2; exit 1; }
-  assert_contains "$(cat "$bundle_dir/configs/hub.yml")" "port: 11960"
+  assert_contains "$(cat "$bundle_dir/.env")" "SERVER_PORT=8080"
+  assert_contains "$(cat "$bundle_dir/.env")" "ENGINE=auto"
+  if grep -q '^server:' "$bundle_dir/configs/hub.yml"; then
+    echo "expected configs/hub.yml to omit server config" >&2
+    exit 1
+  fi
+  if grep -qE '^  engine:' "$bundle_dir/configs/hub.yml"; then
+    echo "expected configs/hub.yml to omit runtime.engine" >&2
+    exit 1
+  fi
+  if ! grep -qE '^(# )?SERVER_HOST=' "$bundle_dir/.env.example" || ! grep -qE '^(# )?SERVER_PORT=' "$bundle_dir/.env.example" || ! grep -qE '^(# )?ENGINE=' "$bundle_dir/.env.example"; then
+    echo "expected .env.example to contain SERVER_HOST, SERVER_PORT, and ENGINE" >&2
+    exit 1
+  fi
   if grep -qE '^(# )?(BIND_ADDR|HUB_CONFIG_PATH)=' "$bundle_dir/.env.example"; then
     echo "expected .env.example to omit BIND_ADDR and HUB_CONFIG_PATH" >&2
     exit 1
@@ -128,7 +146,7 @@ test_explicit_engine_creates_runtime_dirs_and_stops_cleanly() {
   make_bundle "$bundle_dir"
   make_fake_engine "$bundle_dir"
   cat >"$bundle_dir/.env" <<'EOF'
-BIND_ADDR=127.0.0.1:11960
+BIND_ADDR=127.0.0.1:8080
 ENGINE=docker
 EOF
   local output
@@ -177,7 +195,7 @@ test_auto_detect_requires_engine_in_path() {
   local bundle_dir="$TMP_ROOT/auto-detect"
   make_bundle "$bundle_dir"
   cat >"$bundle_dir/.env" <<'EOF'
-BIND_ADDR=127.0.0.1:11960
+BIND_ADDR=127.0.0.1:8080
 EOF
 
   set +e
@@ -201,7 +219,7 @@ test_auto_detect_succeeds_with_fake_engine() {
   make_bundle "$bundle_dir"
   make_fake_engine "$bundle_dir"
   cat >"$bundle_dir/.env" <<'EOF'
-BIND_ADDR=127.0.0.1:11960
+BIND_ADDR=127.0.0.1:8080
 EOF
 
   local output
@@ -241,7 +259,7 @@ test_invalid_explicit_engine_fails_fast() {
   local bundle_dir="$TMP_ROOT/invalid-engine"
   make_bundle "$bundle_dir"
   cat >"$bundle_dir/.env" <<'EOF'
-BIND_ADDR=127.0.0.1:11960
+BIND_ADDR=127.0.0.1:8080
 ENGINE=missing-engine
 EOF
 
@@ -264,7 +282,7 @@ EOF
 test_removed_local_engine_fails_fast() {
   local bundle_dir="$TMP_ROOT/removed-local-engine"
   make_bundle "$bundle_dir"
-  printf 'BIND_ADDR=127.0.0.1:11960\nENGINE=%s\n' "local" >"$bundle_dir/.env"
+  printf 'BIND_ADDR=127.0.0.1:8080\nENGINE=%s\n' "local" >"$bundle_dir/.env"
 
   set +e
   local output
@@ -292,7 +310,7 @@ test_external_config_initialization_is_idempotent() {
   make_fake_engine "$bundle_dir"
   mkdir -p "$config_dir/configs/environments/shell"
   cat >"$config_dir/.env" <<'EOF'
-BIND_ADDR=127.0.0.1:11960
+BIND_ADDR=127.0.0.1:8080
 ENGINE=docker
 EOF
   cat >"$config_dir/configs/environments/shell/environment.yml" <<'EOF'
@@ -308,7 +326,7 @@ EOF
         --data-dir "$data_dir" \
         --state-dir "$state_dir" \
         --log-dir "$log_dir" \
-        --bind-addr 127.0.0.1:11960 2>&1
+        --bind-addr 127.0.0.1:8080 2>&1
   )"
   assert_contains "$output" "started agent-container-hub in daemon mode"
   assert_contains "$(cat "$config_dir/configs/environments/shell/environment.yml")" "custom-shell"

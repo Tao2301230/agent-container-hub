@@ -35,13 +35,12 @@ type Config struct {
 
 const (
 	defaultBindHost           = "127.0.0.1"
-	defaultBindPort           = 11960
+	defaultBindPort           = 8080
 	hubConfigFileName         = "hub.yml"
 	removedLocalEngineMessage = "ENGINE=" + "local has been removed; set ENGINE to docker, podman, or auto, or leave empty for auto-detect"
 )
 
 type hubFileConfig struct {
-	Server    hubServerConfig    `yaml:"server"`
 	Runtime   hubRuntimeConfig   `yaml:"runtime"`
 	Paths     hubPathsConfig     `yaml:"paths"`
 	Execution hubExecutionConfig `yaml:"execution"`
@@ -49,13 +48,7 @@ type hubFileConfig struct {
 	UI        hubUIConfig        `yaml:"ui"`
 }
 
-type hubServerConfig struct {
-	Host *string `yaml:"host"`
-	Port *int    `yaml:"port"`
-}
-
 type hubRuntimeConfig struct {
-	Engine                   *string `yaml:"engine"`
 	NetworkPolicyHelperImage *string `yaml:"network_policy_helper_image"`
 }
 
@@ -139,7 +132,9 @@ func LoadWithArgs(args []string) (Config, error) {
 	if err := applyHubFileConfig(&cfg, filepath.Join(cfg.ConfigRoot, hubConfigFileName)); err != nil {
 		return Config{}, err
 	}
-	applyEnvOverrides(&cfg)
+	if err := applyEnvOverrides(&cfg); err != nil {
+		return Config{}, err
+	}
 	if options.dataDir != "" {
 		cfg.StateDBPath = filepath.Join(options.dataDir, "hub.db")
 		cfg.RootfsRoot = filepath.Join(options.dataDir, "rootfs")
@@ -185,12 +180,6 @@ func applyHubFileConfig(cfg *Config, path string) error {
 		return fmt.Errorf("parse hub config %s: %w", path, err)
 	}
 	baseDir := filepath.Dir(path)
-	if err := applyHubServerConfig(cfg, fileConfig.Server); err != nil {
-		return fmt.Errorf("parse hub config %s: %w", path, err)
-	}
-	if fileConfig.Runtime.Engine != nil {
-		cfg.Engine = strings.TrimSpace(*fileConfig.Runtime.Engine)
-	}
 	if fileConfig.Runtime.NetworkPolicyHelperImage != nil {
 		cfg.NetworkPolicyHelperImage = strings.TrimSpace(*fileConfig.Runtime.NetworkPolicyHelperImage)
 	}
@@ -234,34 +223,16 @@ func applyHubFileConfig(cfg *Config, path string) error {
 	return nil
 }
 
-func applyHubServerConfig(cfg *Config, server hubServerConfig) error {
-	if server.Host == nil && server.Port == nil {
-		return nil
-	}
-	host, portValue, err := net.SplitHostPort(cfg.BindAddr)
-	if err != nil {
-		return fmt.Errorf("split default bind address: %w", err)
-	}
-	port, err := strconv.Atoi(portValue)
-	if err != nil {
-		return fmt.Errorf("parse default bind port: %w", err)
-	}
-	if server.Host != nil {
-		host = strings.TrimSpace(*server.Host)
-	}
-	if server.Port != nil {
-		if *server.Port < 0 || *server.Port > 65535 {
-			return fmt.Errorf("server.port must be between 0 and 65535")
-		}
-		port = *server.Port
-	}
-	cfg.BindAddr = net.JoinHostPort(host, strconv.Itoa(port))
-	return nil
-}
-
-func applyEnvOverrides(cfg *Config) {
+func applyEnvOverrides(cfg *Config) error {
 	cfg.AuthToken = strings.TrimSpace(os.Getenv("AUTH_TOKEN"))
-	cfg.BindAddr = getEnv("BIND_ADDR", cfg.BindAddr)
+	bindAddr := strings.TrimSpace(os.Getenv("BIND_ADDR"))
+	if bindAddr != "" {
+		cfg.BindAddr = bindAddr
+	} else {
+		if err := applyServerEnvOverrides(cfg); err != nil {
+			return err
+		}
+	}
 	cfg.StateDBPath = getEnv("STATE_DB_PATH", cfg.StateDBPath)
 	cfg.RootfsRoot = getEnv("ROOTFS_ROOT", cfg.RootfsRoot)
 	cfg.BuildRoot = getEnv("BUILD_ROOT", cfg.BuildRoot)
@@ -279,6 +250,34 @@ func applyEnvOverrides(cfg *Config) {
 	if displayTimezone != "" || tz != "" {
 		cfg.DisplayTimezone = resolveDisplayTimezone(displayTimezone, tz)
 	}
+	return nil
+}
+
+func applyServerEnvOverrides(cfg *Config) error {
+	host := strings.TrimSpace(os.Getenv("SERVER_HOST"))
+	portValue := strings.TrimSpace(os.Getenv("SERVER_PORT"))
+	if host == "" && portValue == "" {
+		return nil
+	}
+	currentHost, currentPort, err := net.SplitHostPort(cfg.BindAddr)
+	if err != nil {
+		return fmt.Errorf("split bind address: %w", err)
+	}
+	if host == "" {
+		host = currentHost
+	}
+	if portValue == "" {
+		portValue = currentPort
+	}
+	port, err := strconv.Atoi(portValue)
+	if err != nil {
+		return fmt.Errorf("SERVER_PORT must be an integer between 0 and 65535: %w", err)
+	}
+	if port < 0 || port > 65535 {
+		return fmt.Errorf("SERVER_PORT must be between 0 and 65535")
+	}
+	cfg.BindAddr = net.JoinHostPort(host, strconv.Itoa(port))
+	return nil
 }
 
 func (c Config) Validate() error {

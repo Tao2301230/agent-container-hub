@@ -315,13 +315,10 @@ ${required_paths_json}
   },
   "web": {
     "routePath": "/",
-    "hostConfigRelativePath": "configs/hub.yml",
-    "hostConfigKey": "server.host",
-    "portConfigRelativePath": "configs/hub.yml",
-    "portConfigKey": "server.port",
-    "portEnvKey": "BIND_ADDR",
-    "defaultPort": 11960,
-    "portFormat": "host:port"
+    "hostEnvKey": "SERVER_HOST",
+    "portEnvKey": "SERVER_PORT",
+    "defaultPort": 8080,
+    "portFormat": "port"
   },
   "desktop": {
     "displayOrder": 1,

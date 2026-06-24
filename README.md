@@ -61,22 +61,18 @@ environment 可以内嵌 Dockerfile。调用构建接口后，服务会：
 ### 本地启动
 
 ```bash
+cp .env.example .env
 cp configs/hub.example.yml configs/hub.yml
 ```
 
-最少确认这些配置：
+默认配置：
 
-- `server.port=11960`
+- `SERVER_HOST=127.0.0.1`
+- `SERVER_PORT=8080`
+- `ENGINE=auto` 自动探测，或显式指定 `docker` / `podman`
 - `paths.state_db_path=../data/hub.db`
 - `paths.rootfs_root=../data/rootfs`
 - `paths.build_root=../data/builds`
-- `runtime.engine=auto` 自动探测，或显式指定 `docker` / `podman`
-
-如果需要对外监听或设置管理站登录 token，再复制并填写 `.env`：
-
-```bash
-cp .env.example .env
-```
 
 启动：
 
@@ -152,6 +148,7 @@ program bundle 解压后包含：
 - `.env.example`
 - `README.txt`
 - `backend/agent-container-hub` 或 `backend/agent-container-hub.exe`
+- `configs/hub.example.yml` service config template
 - `configs/environments/` live config
 - 当前平台根目录 `deploy/start/stop`
 - `scripts/program-common.{sh|ps1}`
@@ -169,6 +166,7 @@ image bundle 解压后包含：
 - `README.txt`
 - `load-image.sh`
 - `images/agent-container-hub-image-vX.Y.Z-linux-<arch>.tar.gz`
+- `configs/hub.example.yml` service config template
 - `configs/environments/` live config
 
 导入镜像：
@@ -192,9 +190,10 @@ PROGRAM_TARGETS=windows make release-program VERSION=v0.1.0 ARCH=amd64
 
 ## 配置
 
-服务配置优先使用 `configs/hub.yml`。首次自定义时从样板复制：
+结构化服务配置优先使用 `configs/hub.yml`，监听地址、容器引擎和敏感项放在 `.env`。首次自定义时从样板复制：
 
 ```bash
+cp .env.example .env
 cp configs/hub.example.yml configs/hub.yml
 ```
 
@@ -203,14 +202,11 @@ cp configs/hub.example.yml configs/hub.yml
 加载优先级：
 
 ```text
-代码默认值 < configs/hub.yml < 环境变量兼容覆盖 < CLI 参数
+代码默认值 < configs/hub.yml < 环境变量 < CLI 参数
 ```
 
 主要 YAML 配置项：
 
-- `server.host` / `server.port`
-  - 默认值：`127.0.0.1` / `11960`
-  - 对外监听时将 `host` 设置为 `0.0.0.0`，并必须通过 `AUTH_TOKEN` 设置登录 token
 - `paths.state_db_path`
   - SQLite 运行态数据库路径，保存 `sessions`、`build_jobs`、`session_executions`
 - `paths.rootfs_root`
@@ -219,8 +215,6 @@ cp configs/hub.example.yml configs/hub.yml
   - environment build context 与 smoke check 临时目录根路径
 - `paths.session_mount_template_root`
   - 可选的会话挂载模板目录；未配置时模板接口返回空模板
-- `runtime.engine`
-  - 可选值：`auto`、`docker`、`podman`
 - `runtime.network_policy_helper_image`
   - 当 session 配置 `network_policy` 时，用该 helper 镜像加入 session 容器的 network namespace 并安装 iptables/ip6tables 规则
 - `execution.default_command_timeout`
@@ -236,14 +230,18 @@ cp configs/hub.example.yml configs/hub.yml
 - `ui.display_timezone`
   - 管理站日期时间展示使用的 IANA 时区
 
-`.env` 只建议放敏感项：
+监听地址、容器引擎与敏感项放在 `.env`：
 
 ```dotenv
-# Optional when binding locally. Required when exposing the service beyond localhost.
-AUTH_TOKEN=
+# SERVER_HOST=127.0.0.1
+# SERVER_PORT=8080
+# ENGINE=auto
+
+# Required when SERVER_HOST is not localhost/loopback.
+# AUTH_TOKEN=
 ```
 
-旧环境变量仍保留兼容覆盖能力，包括 `BIND_ADDR`、`STATE_DB_PATH`、`ROOTFS_ROOT`、`BUILD_ROOT`、`SESSION_MOUNT_TEMPLATE_ROOT`、`ENGINE`、`DEFAULT_COMMAND_TIMEOUT`、`DELETE_ROOTFS_ON_STOP`、`ENABLE_EXEC_LOG_PERSIST`、`EXEC_LOG_MAX_OUTPUT_BYTES`、`NETWORK_POLICY_HELPER_IMAGE`、`DISPLAY_TIMEZONE`、`TZ`、`HTTP_ACCESS_LOG_ENABLED`、`HTTP_ERROR_LOG_ENABLED`。
+旧环境变量仍保留兼容覆盖能力，包括 `BIND_ADDR`、`STATE_DB_PATH`、`ROOTFS_ROOT`、`BUILD_ROOT`、`SESSION_MOUNT_TEMPLATE_ROOT`、`DEFAULT_COMMAND_TIMEOUT`、`DELETE_ROOTFS_ON_STOP`、`ENABLE_EXEC_LOG_PERSIST`、`EXEC_LOG_MAX_OUTPUT_BYTES`、`NETWORK_POLICY_HELPER_IMAGE`、`DISPLAY_TIMEZONE`、`TZ`、`HTTP_ACCESS_LOG_ENABLED`、`HTTP_ERROR_LOG_ENABLED`。其中 `BIND_ADDR` 优先级高于 `SERVER_HOST` / `SERVER_PORT`，仅建议用于兼容旧部署或应急覆盖。
 
 ## API 概览
 
@@ -261,7 +259,7 @@ AUTH_TOKEN=
 创建 session 示例：
 
 ```bash
-curl -X POST http://127.0.0.1:11960/api/sessions/create \
+curl -X POST http://127.0.0.1:8080/api/sessions/create \
   -H 'Content-Type: application/json' \
   -d '{
     "session_id": "demo-shell",
@@ -303,7 +301,7 @@ curl -X POST http://127.0.0.1:11960/api/sessions/create \
 执行命令示例：
 
 ```bash
-curl -X POST http://127.0.0.1:11960/api/sessions/demo-shell/execute \
+curl -X POST http://127.0.0.1:8080/api/sessions/demo-shell/execute \
   -H 'Content-Type: application/json' \
   -d '{
     "command": "/bin/sh",
@@ -341,13 +339,13 @@ hello
 查询 session 示例：
 
 ```bash
-curl "http://127.0.0.1:11960/api/sessions/query?status=history&page=1&page_size=20"
+curl "http://127.0.0.1:8080/api/sessions/query?status=history&page=1&page_size=20"
 ```
 
 查看某个 session 的 execute 日志：
 
 ```bash
-curl "http://127.0.0.1:11960/api/sessions/demo-shell/executions?page=1&page_size=20"
+curl "http://127.0.0.1:8080/api/sessions/demo-shell/executions?page=1&page_size=20"
 ```
 
 说明：
@@ -360,7 +358,7 @@ curl "http://127.0.0.1:11960/api/sessions/demo-shell/executions?page=1&page_size
 停止 session 示例：
 
 ```bash
-curl -X POST http://127.0.0.1:11960/api/sessions/demo-shell/stop
+curl -X POST http://127.0.0.1:8080/api/sessions/demo-shell/stop
 ```
 
 响应示例：
@@ -392,7 +390,7 @@ curl -X POST http://127.0.0.1:11960/api/sessions/demo-shell/stop
 注册 environment 示例：
 
 ```bash
-curl -X POST http://127.0.0.1:11960/api/environments \
+curl -X POST http://127.0.0.1:8080/api/environments \
   -H 'Content-Type: application/json' \
   -d '{
     "name": "shell",
@@ -410,7 +408,7 @@ curl -X POST http://127.0.0.1:11960/api/environments \
 触发 build 示例：
 
 ```bash
-curl -X POST http://127.0.0.1:11960/api/environments/shell/build-jobs
+curl -X POST http://127.0.0.1:8080/api/environments/shell/build-jobs
 ```
 
 如果需要直接在环境目录里本地构建镜像，也可以使用各自的 `Makefile`：
@@ -444,7 +442,7 @@ cd configs/environments/toolbox && make build-cn
 调用侧如果要给智能体注入环境专属提示词，可以先读取：
 
 ```bash
-curl http://127.0.0.1:11960/api/environments/daily-office/agent-prompt
+curl http://127.0.0.1:8080/api/environments/daily-office/agent-prompt
 ```
 
 示例响应：
@@ -620,7 +618,7 @@ agent-container-hub/
 - `data/` 与 `run/` 在 `deploy.sh` 或 `start.sh` 首次执行时按需创建
 - 当前项目继续交付 `configs/hub.example.yml` 和 `configs/environments/`，因为它们是运行时配置来源
 - 当前项目的管理站 UI 继续内嵌在 Go 二进制中，不提供外部静态资源目录；manifest 的 `frontend` 字段会明确说明前端入口是 `/`、资源前缀是 `/ui/`，并且可直接访问服务端口
-- `runtime.engine` 留空、`auto` 或设置为 `docker` / `podman` 时，运行期仍依赖宿主机对应的容器引擎可用且 daemon 可达
+- `ENGINE` 留空、`auto` 或设置为 `docker` / `podman` 时，运行期仍依赖宿主机对应的容器引擎可用且 daemon 可达
 
 ## 常见排查
 

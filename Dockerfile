@@ -14,12 +14,14 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -ldflags "-X main.bui
 FROM alpine:3.22
 
 WORKDIR /app
-ENV BIND_ADDR=0.0.0.0:11960
+ENV SERVER_HOST=0.0.0.0
+ENV SERVER_PORT=8080
+ENV ENGINE=auto
 
 COPY --from=builder /out/agent-container-hub /usr/local/bin/agent-container-hub
 COPY .env.example /app/.env.example
 COPY configs/hub.example.yml /app/configs/hub.example.yml
 
-EXPOSE 11960
+EXPOSE 8080
 
 ENTRYPOINT ["/usr/local/bin/agent-container-hub"]

@@ -19,9 +19,10 @@ Bundle layout notes:
 Recommended deployment flow:
 1. Extract the tar.gz bundle.
 2. Change into the extracted agent-container-hub directory.
-3. Copy configs/hub.example.yml to configs/hub.yml and adjust service settings for the target host.
-4. Run ./load-image.sh to import the bundled image into the local docker or podman image store.
-5. Start containers using your deployment method of choice with the imported image tag.
+3. Copy .env.example to .env and adjust SERVER_HOST, SERVER_PORT, ENGINE, and AUTH_TOKEN for the target host.
+4. Copy configs/hub.example.yml to configs/hub.yml and adjust service paths if needed.
+5. Run ./load-image.sh to import the bundled image into the local docker or podman image store.
+6. Start containers using your deployment method of choice with the imported image tag.
 
 Notes:
 - This bundle does not include a host-process binary release.

@@ -1,9 +1,4 @@
-server:
-  host: 127.0.0.1
-  port: 11960
-
 runtime:
-  engine: auto
   network_policy_helper_image: agent-container-hub/network-policy-helper:latest
 
 paths:

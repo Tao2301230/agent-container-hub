@@ -17,7 +17,7 @@ Deployment steps:
 1. Extract the archive for the matching host OS.
 2. Change into the extracted agent-container-hub directory.
 3. Run ./deploy.sh on macOS/Linux or ./deploy.ps1 on Windows to validate the bundle and create .env, configs/hub.yml, and runtime directories.
-4. Adjust configs/hub.yml for paths, bind host/port, and runtime.engine if needed. Put only secrets such as AUTH_TOKEN in .env.
+4. Adjust .env for SERVER_HOST, SERVER_PORT, ENGINE, and AUTH_TOKEN. Adjust configs/hub.yml for paths if needed.
 5. Start with ./start.sh or ./start.sh --daemon on macOS/Linux, or ./start.ps1, ./start.ps1 --daemon, or ./start.ps1 -Daemon on Windows.
 6. Use ./stop.sh or ./stop.ps1 only for daemon-mode processes managed by the bundle scripts.
 
@@ -26,4 +26,4 @@ Layout notes:
 - configs/hub.yml is copied from configs/hub.example.yml on first deploy and is not overwritten later.
 - configs/environments remains in the bundle because it is the runtime source of truth for environment definitions.
 - data/ and run/ are created on first deploy/start and are not pre-created in the archive.
-- If runtime.engine is auto or empty, the service auto-detects docker first and then podman. Startup validates the selected engine with `info` and exits if the daemon is unreachable.
+- If ENGINE is auto or empty, the service auto-detects docker first and then podman. Startup validates the selected engine with `info` and exits if the daemon is unreachable.
