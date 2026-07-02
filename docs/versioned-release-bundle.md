@@ -149,7 +149,7 @@ agent-container-hub/
 
 ### 3.4 运行时要求
 
-- `deploy.*` 只负责校验 bundle 和初始化 `data/`、`data/rootfs/`、`data/builds/`、`run/`
+- `deploy.*` 只负责校验 bundle 和初始化 `.env`、`configs/hub.yml` 等配置文件；只接受 `--output-dir`
 - `start.*` 默认前台运行，支持 daemon 模式
 - daemon 模式 pid/log 固定写入 `run/agent-container-hub.pid` 与 `run/agent-container-hub.log`
 - `stop.*` 只负责停止 daemon 模式下由 bundle 脚本启动的本地进程

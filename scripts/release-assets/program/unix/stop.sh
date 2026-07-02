@@ -22,7 +22,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-program_apply_layout_args "${layout_args[@]}"
+if ((${#layout_args[@]} > 0)); then
+  program_apply_layout_args "${layout_args[@]}"
+else
+  program_apply_layout_args
+fi
 
 cd "$SCRIPT_DIR"
 program_validate_bundle

@@ -338,8 +338,7 @@ EOF
     cd "$bundle_dir" &&
       PATH="$bundle_dir/bin:$SAFE_PATH" \
       /bin/bash ./stop.sh \
-        --state-dir "$state_dir" \
-        --log-dir "$log_dir" 2>&1
+        --state-dir "$state_dir" 2>&1
   )"
   assert_contains "$output" "stopped agent-container-hub"
 }
@@ -347,9 +346,6 @@ EOF
 test_external_deploy_initialization_is_idempotent() {
   local bundle_dir="$TMP_ROOT/external-deploy-idempotent"
   local config_dir="$TMP_ROOT/external-deploy-config"
-  local data_dir="$TMP_ROOT/external-deploy-data"
-  local state_dir="$TMP_ROOT/external-deploy-state"
-  local log_dir="$TMP_ROOT/external-deploy-logs"
   make_bundle "$bundle_dir"
   mkdir -p "$config_dir/configs/environments/shell"
   cat >"$config_dir/.env" <<'EOF'
@@ -368,18 +364,14 @@ EOF
     cd "$bundle_dir" &&
       PATH="$SAFE_PATH" \
       /bin/bash ./deploy.sh \
-        --config-dir "$config_dir" \
-        --data-dir "$data_dir" \
-        --state-dir "$state_dir" \
-        --log-dir "$log_dir" 2>&1
+        --output-dir "$config_dir" 2>&1
   )"
   assert_contains "$output" "bundle validated"
   assert_contains "$(cat "$config_dir/.env")" "custom-token"
   assert_contains "$(cat "$config_dir/configs/hub.yml")" "13000"
   assert_contains "$(cat "$config_dir/configs/environments/shell/environment.yml")" "custom-shell"
-  [[ -d "$data_dir/rootfs" ]] || { echo "expected external rootfs dir to be created" >&2; exit 1; }
-  [[ -d "$state_dir" ]] || { echo "expected external state dir to be created" >&2; exit 1; }
-  [[ -d "$log_dir" ]] || { echo "expected external log dir to be created" >&2; exit 1; }
+  [[ ! -d "$bundle_dir/data" ]] || { echo "expected deploy not to create data dir" >&2; exit 1; }
+  [[ ! -d "$bundle_dir/run" ]] || { echo "expected deploy not to create run dir" >&2; exit 1; }
 }
 
 test_deploy_initializes_env_and_hub_config

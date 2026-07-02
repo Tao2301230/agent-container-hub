@@ -573,7 +573,7 @@ make build
 
 生产环境建议：
 
-- 将 `configs/hub.yml` 中的运行态路径指向持久化磁盘，或通过 `--data-dir` / `--config-dir` 指定外部目录
+- 将 `configs/hub.yml` 中的运行态路径指向持久化磁盘，或启动时通过 `--data-dir` / `--config-dir` 指定外部目录
 - 对外监听时务必设置 `AUTH_TOKEN`
 - 预先确认宿主机容器引擎权限、镜像仓库登录状态和 socket 可用性
 - `configs/environments/` 是唯一真相来源；若升级 bundle 前本地改过环境配置，请先备份或合并
@@ -611,11 +611,11 @@ agent-container-hub/
 其中：
 
 - `manifest.json` 是 bundle 根目录固定契约，声明 frontend、API、后端入口和平台脚本
-- `deploy.sh` 只做 bundle 校验、`.env` / `configs/hub.yml` 首次初始化和运行目录初始化
+- `deploy.sh` 只做 bundle 校验和 `.env` / `configs/hub.yml` 首次初始化；只接受 `--output-dir`
 - `start.sh` 默认前台运行，`./start.sh --daemon` 可切到后台
 - `start.sh` 会对 `ENGINE` 环境变量显式指定的容器引擎执行 `info` 校验；若未设置，则检查是否存在可用的 `docker` 或 `podman`
 - `stop.sh` 只负责停止 `--daemon` 模式启动的本地进程
-- `data/` 与 `run/` 在 `deploy.sh` 或 `start.sh` 首次执行时按需创建
+- `data/` 与 `run/` 在 `start.sh` 首次执行时按需创建
 - 当前项目继续交付 `configs/hub.example.yml` 和 `configs/environments/`，因为它们是运行时配置来源
 - 当前项目的管理站 UI 继续内嵌在 Go 二进制中，不提供外部静态资源目录；manifest 的 `frontend` 字段会明确说明前端入口是 `/`、资源前缀是 `/ui/`，并且可直接访问服务端口
 - `ENGINE` 留空、`auto` 或设置为 `docker` / `podman` 时，运行期仍依赖宿主机对应的容器引擎可用且 daemon 可达
