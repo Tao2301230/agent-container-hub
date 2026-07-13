@@ -167,8 +167,7 @@ parse_program_target_matrix() {
     return
   fi
 
-  printf 'darwin arm64\n'
-  printf 'windows amd64\n'
+  printf '%s %s\n' "$(detect_host_os)" "$ARCH"
 }
 
 image_target_os() {

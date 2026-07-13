@@ -43,7 +43,7 @@ make release-image
 
 默认平台规则：
 
-- `release` / `release-program`：默认固定打 `darwin/arm64` 和 `windows/amd64`
+- `release` / `release-program`：默认打当前宿主机 OS 与传入 `ARCH` 对应的一个 Program Bundle；未传入 `ARCH` 时使用宿主机架构
 - `release-image`：固定打 `linux` 当前架构镜像 bundle
 
 ## 3. Program Bundle
@@ -204,7 +204,7 @@ cd agent-container-hub
 ## 5. 验证重点
 
 - `make release` 与 `make release-program` 行为一致
-- 默认一次产出 `darwin/arm64` 和 `windows/amd64` 两个 Program Bundle
+- 默认一次产出当前宿主机 OS 与 `ARCH` 对应的一个 Program Bundle
 - Windows Program Bundle 使用 `.zip`
 - Program Bundle 根目录必须包含 `manifest.json`
 - Program Bundle 不包含 `.cmd`、`systemd/`、空的 `data/`、空的 `run/`

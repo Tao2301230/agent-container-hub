@@ -109,10 +109,8 @@ make release
 make release-program
 ```
 
-默认会一次产出两个 program bundle：
-
-- `darwin/arm64`
-- `windows/amd64`
+默认产出当前宿主机 OS 与 `ARCH` 对应的一个 Program Bundle；未传入 `ARCH` 时使用宿主机架构。
+发布矩阵时显式传入 `PROGRAM_TARGETS` 或 `PROGRAM_TARGET_MATRIX`。
 
 构建镜像 bundle：
 
