@@ -1,6 +1,11 @@
 APP_NAME := agent-container-hub
+ifeq ($(OS),Windows_NT)
+VERSION :=
+ARCH ?= amd64
+else
 VERSION := $(shell cat VERSION 2>/dev/null || echo "dev")
 ARCH ?= $(shell uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')
+endif
 LDFLAGS := -X main.buildVersion=$(VERSION)
 BUILD_DIR := dist/release
 CONTAINER_ENGINE ?= docker
@@ -26,8 +31,13 @@ network-policy-helper-image:
 release:
 	$(MAKE) release-program VERSION=$(VERSION) ARCH=$(ARCH)
 
+ifeq ($(OS),Windows_NT)
+release-program:
+	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-program.ps1 -Version "$(VERSION)" -Arch "$(ARCH)"
+else
 release-program:
 	VERSION=$(VERSION) ARCH=$(ARCH) bash scripts/release.sh
+endif
 
 release-image:
 	VERSION=$(VERSION) ARCH=$(ARCH) bash scripts/release-image.sh

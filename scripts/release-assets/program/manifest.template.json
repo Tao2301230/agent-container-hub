@@ -1,0 +1,80 @@
+{
+  "kind": "builtin",
+  "id": "agent-container-hub",
+  "name": "Container Hub",
+  "version": "__VERSION__",
+  "description": "宿主机容器服务，负责为后续智能体运行时提供沙箱能力。",
+  "platform": {
+    "os": "__TARGET_OS__",
+    "arch": "__TARGET_ARCH__"
+  },
+  "frontend": {
+    "mode": "embedded",
+    "entry": "/",
+    "assetsPrefix": "/ui/",
+    "directAccess": true,
+    "hostManaged": false
+  },
+  "api": {
+    "enabled": true
+  },
+  "backend": {
+    "entry": "__BACKEND_ENTRY__"
+  },
+  "lifecycle": {
+    "start": ["__START_SCRIPT__", "--daemon"],
+    "stop": "__STOP_SCRIPT__",
+    "deploy": "__DEPLOY_SCRIPT__"
+  },
+  "configFiles": [
+    {
+      "key": "hub",
+      "label": "configs/hub.yml",
+      "relativePath": "configs/hub.yml",
+      "templateRelativePath": "configs/hub.example.yml",
+      "required": true
+    },
+    {
+      "key": "env",
+      "label": ".env",
+      "relativePath": ".env",
+      "templateRelativePath": ".env.example",
+      "required": true
+    }
+  ],
+  "runtime": {
+    "pidRelativePath": "run/agent-container-hub.pid",
+    "logRelativePath": "run/agent-container-hub.log",
+__ERROR_LOG_LINE__
+    "requiredPaths": [
+      "__BACKEND_ENTRY__",
+      "__START_SCRIPT__",
+      "__STOP_SCRIPT__",
+      "__DEPLOY_SCRIPT__",
+      "__PROGRAM_COMMON__",
+      ".env.example",
+      "manifest.json",
+      "configs/hub.example.yml",
+      "configs/environments"
+    ]
+  },
+  "web": {
+    "routePath": "/",
+    "hostEnvKey": "SERVER_HOST",
+    "portEnvKey": "SERVER_PORT",
+    "defaultPort": 8080,
+    "portFormat": "port"
+  },
+  "desktop": {
+    "displayOrder": 1,
+    "autoStart": "optional",
+    "assetFileName": "__ASSET_FILENAME__",
+    "bundleTopLevelDir": "agent-container-hub",
+    "systemRequirements": ["docker|podman"],
+    "capabilities": {
+      "provides": [],
+      "requires": []
+    }
+  }
+}
+

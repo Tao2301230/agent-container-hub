@@ -209,127 +209,13 @@ write_program_manifest() {
   local target_arch="$3"
   local backend_entry="$4"
   local asset_file_name="$5"
-  local start_script="start.sh"
-  local stop_script="stop.sh"
-  local deploy_script="deploy.sh"
-  local program_common_script="scripts/program-common.sh"
-  local error_log_json=""
-  local required_paths=()
-  local required_paths_json
-  local index
+  local manifest_template="$REPO_ROOT/scripts/release-assets/program/manifest.template.json"
 
-  if [[ "$target_os" == "windows" ]]; then
-    start_script="start.ps1"
-    stop_script="stop.ps1"
-    deploy_script="deploy.ps1"
-    program_common_script="scripts/program-common.ps1"
-    error_log_json='    "errorLogRelativePath": "run/agent-container-hub.stderr.log",'
-    required_paths=(
-      "backend/agent-container-hub.exe"
-      "$start_script"
-      "$stop_script"
-      "$deploy_script"
-      "$program_common_script"
-      ".env.example"
-      "manifest.json"
-      "configs/hub.example.yml"
-      "configs/environments"
-    )
-  else
-    required_paths=(
-      "backend/agent-container-hub"
-      "$start_script"
-      "$stop_script"
-      "$deploy_script"
-      "$program_common_script"
-      ".env.example"
-      "manifest.json"
-      "configs/hub.example.yml"
-      "configs/environments"
-    )
-  fi
-
-  required_paths_json=""
-  for index in "${!required_paths[@]}"; do
-    required_paths_json+="      \"${required_paths[$index]}\""
-    if (( index < ${#required_paths[@]} - 1 )); then
-      required_paths_json+=","
-    fi
-    required_paths_json+=$'\n'
-  done
-  required_paths_json="${required_paths_json%$'\n'}"
-
-  cat >"$dest" <<EOF
-{
-  "kind": "builtin",
-  "id": "$APP_NAME",
-  "name": "Container Hub",
-  "version": "$VERSION",
-  "description": "宿主机容器服务，负责为后续智能体运行时提供沙箱能力。",
-  "platform": {
-    "os": "$target_os",
-    "arch": "$target_arch"
-  },
-  "frontend": {
-    "mode": "embedded",
-    "entry": "/",
-    "assetsPrefix": "/ui/",
-    "directAccess": true,
-    "hostManaged": false
-  },
-  "api": {
-    "enabled": true
-  },
-  "backend": {
-    "entry": "$backend_entry"
-  },
-  "lifecycle": {
-    "start": ["$start_script", "--daemon"],
-    "stop": "$stop_script",
-    "deploy": "$deploy_script"
-  },
-  "configFiles": [
-    {
-      "key": "hub",
-      "label": "configs/hub.yml",
-      "relativePath": "configs/hub.yml",
-      "templateRelativePath": "configs/hub.example.yml",
-      "required": true
-    },
-    {
-      "key": "env",
-      "label": ".env",
-      "relativePath": ".env",
-      "templateRelativePath": ".env.example",
-      "required": true
-    }
-  ],
-  "runtime": {
-    "pidRelativePath": "run/agent-container-hub.pid",
-    "logRelativePath": "run/agent-container-hub.log",
-${error_log_json}
-    "requiredPaths": [
-${required_paths_json}
-    ]
-  },
-  "web": {
-    "routePath": "/",
-    "hostEnvKey": "SERVER_HOST",
-    "portEnvKey": "SERVER_PORT",
-    "defaultPort": 8080,
-    "portFormat": "port"
-  },
-  "desktop": {
-    "displayOrder": 1,
-    "autoStart": "optional",
-    "assetFileName": "$asset_file_name",
-    "bundleTopLevelDir": "$APP_NAME",
-    "systemRequirements": ["docker|podman"],
-    "capabilities": {
-      "provides": [],
-      "requires": []
-    }
-  }
-}
-EOF
+  (
+    cd "$REPO_ROOT"
+    go run ./cmd/render-program-manifest \
+      --template "$manifest_template" --output "$dest" \
+      --version "$VERSION" --os "$target_os" --arch "$target_arch" \
+      --backend "$backend_entry" --asset "$asset_file_name"
+  )
 }
