@@ -445,9 +445,10 @@ func (s *Server) handleGetEnvironment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRuntimeInfo(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{
-		"engine":           s.engineName,
-		"display_timezone": s.displayTimezone,
+	writeJSON(w, http.StatusOK, map[string]any{
+		"engine":              s.engineName,
+		"display_timezone":    s.displayTimezone,
+		"workspace_protocols": []string{runtime.WorkspaceProtocolDualRootV2},
 	})
 }
 

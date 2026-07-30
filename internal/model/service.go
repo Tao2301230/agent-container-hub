@@ -3,13 +3,15 @@ package model
 import "time"
 
 type CreateSessionRequest struct {
-	SessionID       string
-	EnvironmentName string
-	Cwd             string
-	Env             map[string]string
-	Labels          map[string]string
-	Mounts          []Mount
-	NetworkPolicy   *NetworkPolicy
+	SessionID         string
+	EnvironmentName   string
+	Cwd               string
+	WorkspaceProtocol string
+	MaskedPaths       []string
+	Env               map[string]string
+	Labels            map[string]string
+	Mounts            []Mount
+	NetworkPolicy     *NetworkPolicy
 }
 
 type ExecuteSessionRequest struct {
@@ -67,15 +69,15 @@ type StopSessionResult struct {
 }
 
 type ExecuteSessionResult struct {
-	SessionID        string
-	ExitCode         int
-	Stdout           string
-	Stderr           string
-	WorkingDirectory string
-	TimedOut         bool
-	DurationMS       int64
-	StartedAt        time.Time
-	FinishedAt       time.Time
+	SessionID  string
+	ExitCode   int
+	Stdout     string
+	Stderr     string
+	Cwd        string
+	TimedOut   bool
+	DurationMS int64
+	StartedAt  time.Time
+	FinishedAt time.Time
 }
 
 func (r *ExecuteSessionResult) Succeeded() bool {

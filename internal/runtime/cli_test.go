@@ -99,6 +99,37 @@ func TestCLIProviderCreateDoesNotInspect(t *testing.T) {
 	}
 }
 
+func TestCLIProviderCreateOrdersWorkspaceMaskBeforeChatMount(t *testing.T) {
+	t.Parallel()
+
+	binary, logPath := writeFakeRuntimeBinary(t)
+	provider := &CLIProvider{binary: binary}
+	_, err := provider.Create(context.Background(), CreateOptions{
+		Name:  "masked",
+		Image: "busybox:latest",
+		Cwd:   DefaultMountPath,
+		Mounts: []model.Mount{
+			{Source: "/host/chat", Destination: "/chat"},
+			{Source: "/host/workspace", Destination: "/workspace"},
+		},
+		MaskedPaths: []string{"/workspace/runtime/chats"},
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logText := string(data)
+	workspaceAt := strings.Index(logText, "dst=/workspace")
+	maskAt := strings.Index(logText, "--tmpfs /workspace/runtime/chats:rw,nosuid,nodev,noexec")
+	chatAt := strings.Index(logText, "dst=/chat")
+	if workspaceAt < 0 || maskAt < 0 || chatAt < 0 || !(workspaceAt < maskAt && maskAt < chatAt) {
+		t.Fatalf("create mount order is not workspace -> mask -> chat: %s", logText)
+	}
+}
+
 func TestCLIProviderCreateDropsNetAdminForNetworkPolicy(t *testing.T) {
 	t.Parallel()
 

@@ -7,13 +7,15 @@ import (
 )
 
 type CreateSessionRequest struct {
-	SessionID       string               `json:"session_id"`
-	EnvironmentName string               `json:"environment_name"`
-	Cwd             string               `json:"cwd"`
-	Env             map[string]string    `json:"env,omitempty"`
-	Labels          map[string]string    `json:"labels"`
-	Mounts          []model.Mount        `json:"mounts"`
-	NetworkPolicy   *model.NetworkPolicy `json:"network_policy,omitempty"`
+	SessionID         string               `json:"session_id"`
+	EnvironmentName   string               `json:"environment_name"`
+	Cwd               string               `json:"cwd"`
+	WorkspaceProtocol string               `json:"workspaceProtocol,omitempty"`
+	MaskedPaths       []string             `json:"masked_paths,omitempty"`
+	Env               map[string]string    `json:"env,omitempty"`
+	Labels            map[string]string    `json:"labels"`
+	Mounts            []model.Mount        `json:"mounts"`
+	NetworkPolicy     *model.NetworkPolicy `json:"network_policy,omitempty"`
 }
 
 type ExecuteSessionRequest struct {
@@ -24,23 +26,23 @@ type ExecuteSessionRequest struct {
 }
 
 type ExecuteSessionResponse struct {
-	SessionID        string    `json:"session_id"`
-	ExitCode         int       `json:"exit_code"`
-	Stdout           string    `json:"stdout"`
-	Stderr           string    `json:"stderr"`
-	WorkingDirectory string    `json:"-"`
-	TimedOut         bool      `json:"timed_out"`
-	DurationMS       int64     `json:"duration_ms"`
-	StartedAt        time.Time `json:"started_at"`
-	FinishedAt       time.Time `json:"finished_at"`
+	SessionID  string    `json:"session_id"`
+	ExitCode   int       `json:"exit_code"`
+	Stdout     string    `json:"stdout"`
+	Stderr     string    `json:"stderr"`
+	Cwd        string    `json:"-"`
+	TimedOut   bool      `json:"timed_out"`
+	DurationMS int64     `json:"duration_ms"`
+	StartedAt  time.Time `json:"started_at"`
+	FinishedAt time.Time `json:"finished_at"`
 }
 
 type ExecuteSessionErrorResponse struct {
-	ExitCode         int    `json:"exit_code"`
-	Mode             string `json:"mode"`
-	WorkingDirectory string `json:"working_directory"`
-	Stdout           string `json:"stdout"`
-	Stderr           string `json:"stderr"`
+	ExitCode int    `json:"exit_code"`
+	Mode     string `json:"mode"`
+	Cwd      string `json:"cwd"`
+	Stdout   string `json:"stdout"`
+	Stderr   string `json:"stderr"`
 }
 
 type SessionExecutionResponse struct {

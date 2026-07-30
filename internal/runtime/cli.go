@@ -156,12 +156,30 @@ func (p *CLIProvider) Create(ctx context.Context, opts CreateOptions) (Container
 	for key, value := range opts.Env {
 		args = append(args, "--env", fmt.Sprintf("%s=%s", key, value))
 	}
-	for _, mount := range opts.Mounts {
+	appendMount := func(mount model.Mount) {
 		spec := fmt.Sprintf("type=bind,src=%s,dst=%s", mount.Source, mount.Destination)
 		if mount.ReadOnly {
 			spec += ",ro=true"
 		}
 		args = append(args, "--mount", spec)
+	}
+	for _, mount := range opts.Mounts {
+		if mount.Destination == DefaultMountPath {
+			appendMount(mount)
+		}
+	}
+	for _, maskedPath := range opts.MaskedPaths {
+		args = append(args, "--tmpfs", maskedPath+":rw,nosuid,nodev,noexec")
+	}
+	for _, mount := range opts.Mounts {
+		if mount.Destination == "/chat" {
+			appendMount(mount)
+		}
+	}
+	for _, mount := range opts.Mounts {
+		if mount.Destination != DefaultMountPath && mount.Destination != "/chat" {
+			appendMount(mount)
+		}
 	}
 	args = append(args, opts.Image, "/bin/sh", "-lc", fmt.Sprintf("trap exit TERM INT; while :; do sleep %d; done", containerKeepAliveSleepSeconds))
 	result, err := p.runCommand(ctx, args...)

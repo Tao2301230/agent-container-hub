@@ -7,13 +7,15 @@ import (
 
 func createSessionRequestToModel(req api.CreateSessionRequest) model.CreateSessionRequest {
 	return model.CreateSessionRequest{
-		SessionID:       req.SessionID,
-		EnvironmentName: req.EnvironmentName,
-		Cwd:             req.Cwd,
-		Env:             model.CloneMap(req.Env),
-		Labels:          model.CloneMap(req.Labels),
-		Mounts:          append([]model.Mount(nil), req.Mounts...),
-		NetworkPolicy:   req.NetworkPolicy.Clone(),
+		SessionID:         req.SessionID,
+		EnvironmentName:   req.EnvironmentName,
+		Cwd:               req.Cwd,
+		WorkspaceProtocol: req.WorkspaceProtocol,
+		MaskedPaths:       append([]string(nil), req.MaskedPaths...),
+		Env:               model.CloneMap(req.Env),
+		Labels:            model.CloneMap(req.Labels),
+		Mounts:            append([]model.Mount(nil), req.Mounts...),
+		NetworkPolicy:     req.NetworkPolicy.Clone(),
 	}
 }
 
@@ -95,11 +97,11 @@ func executeSessionErrorResponse(result *model.ExecuteSessionResult) api.Execute
 		return api.ExecuteSessionErrorResponse{Mode: "sandbox"}
 	}
 	return api.ExecuteSessionErrorResponse{
-		ExitCode:         result.ExitCode,
-		Mode:             "sandbox",
-		WorkingDirectory: result.WorkingDirectory,
-		Stdout:           result.Stdout,
-		Stderr:           result.Stderr,
+		ExitCode: result.ExitCode,
+		Mode:     "sandbox",
+		Cwd:      result.Cwd,
+		Stdout:   result.Stdout,
+		Stderr:   result.Stderr,
 	}
 }
 

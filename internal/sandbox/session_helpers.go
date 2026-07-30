@@ -54,15 +54,15 @@ func generateID() (string, error) {
 
 func executeResponse(sessionID, execCwd string, result runtime.ExecResult) *model.ExecuteSessionResult {
 	return &model.ExecuteSessionResult{
-		SessionID:        sessionID,
-		ExitCode:         result.ExitCode,
-		Stdout:           result.Stdout,
-		Stderr:           result.Stderr,
-		WorkingDirectory: execCwd,
-		TimedOut:         result.TimedOut,
-		DurationMS:       durationMilliseconds(result.StartedAt, result.FinishedAt),
-		StartedAt:        result.StartedAt,
-		FinishedAt:       result.FinishedAt,
+		SessionID:  sessionID,
+		ExitCode:   result.ExitCode,
+		Stdout:     result.Stdout,
+		Stderr:     result.Stderr,
+		Cwd:        execCwd,
+		TimedOut:   result.TimedOut,
+		DurationMS: durationMilliseconds(result.StartedAt, result.FinishedAt),
+		StartedAt:  result.StartedAt,
+		FinishedAt: result.FinishedAt,
 	}
 }
 

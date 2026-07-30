@@ -91,6 +91,8 @@
 ## 6. 开发要点
 
 - 会话创建必须引用已注册且启用的环境
+- Agent Platform 会话使用 `dual-root-v2`：`/workspace` 挂宿主 Workspace、`/chat` 挂当前 Chat、cwd 固定 `/workspace`；`masked_paths` 在 Workspace 包含 ChatsRoot 时遮蔽 `/workspace` 下的 Chats 子树
+- `GET /api/runtime-info` 必须声明 `workspace_protocols: ["dual-root-v2"]`；旧 `workspace-chat-v2` 不兼容
 - 环境更新不会回写已有 session 的配置快照
 - `CONFIG_ROOT/environments` 是 environment 配置唯一真相来源
 - `BUILD_ROOT` 用于平台托管的 Dockerfile 构建上下文

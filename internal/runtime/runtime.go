@@ -18,11 +18,12 @@ var (
 )
 
 const (
-	ManagedByLabel   = "sandbox.managed_by"
-	SessionIDLabel   = "sandbox.session_id"
-	RootfsLabel      = "sandbox.rootfs"
-	CreatedAtLabel   = "sandbox.created_at"
-	DefaultMountPath = "/workspace"
+	ManagedByLabel              = "sandbox.managed_by"
+	SessionIDLabel              = "sandbox.session_id"
+	RootfsLabel                 = "sandbox.rootfs"
+	CreatedAtLabel              = "sandbox.created_at"
+	DefaultMountPath            = "/workspace"
+	WorkspaceProtocolDualRootV2 = "dual-root-v2"
 )
 
 type ContainerState string
@@ -62,6 +63,7 @@ type CreateOptions struct {
 	Cwd           string
 	Env           map[string]string
 	Mounts        []model.Mount
+	MaskedPaths   []string
 	Resources     model.ResourceSpec
 	NetworkPolicy *model.NetworkPolicy
 	Labels        map[string]string

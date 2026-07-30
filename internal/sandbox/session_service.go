@@ -133,6 +133,13 @@ func (s *SessionService) Create(ctx context.Context, req model.CreateSessionRequ
 		}
 		rootfsPath = ""
 	}
+	maskedPaths, err := normalizeMaskedPaths(req.WorkspaceProtocol, req.MaskedPaths, mounts, req.Labels)
+	if err != nil {
+		if rootfsPath != "" {
+			s.warnIfCleanupFails("remove rootfs after mask validation failed", rootfsPath, os.RemoveAll(rootfsPath))
+		}
+		return nil, err
+	}
 
 	containerLabels := model.CloneMap(req.Labels)
 	if containerLabels == nil {
@@ -146,6 +153,12 @@ func (s *SessionService) Create(ctx context.Context, req model.CreateSessionRequ
 	}
 
 	cwd := sessionDefaultCwd(req.Cwd, environment.DefaultCwd)
+	if err := validateDualRootLayout(req.WorkspaceProtocol, cwd, mounts); err != nil {
+		if rootfsPath != "" {
+			s.warnIfCleanupFails("remove rootfs after workspace protocol validation failed", rootfsPath, os.RemoveAll(rootfsPath))
+		}
+		return nil, err
+	}
 	imageRef := strings.TrimSpace(environment.ImageRef())
 
 	info, err := s.runtime.Create(ctx, runtime.CreateOptions{
@@ -154,6 +167,7 @@ func (s *SessionService) Create(ctx context.Context, req model.CreateSessionRequ
 		Cwd:           cwd,
 		Env:           model.CloneMap(env),
 		Mounts:        mounts,
+		MaskedPaths:   maskedPaths,
 		Resources:     environment.Resources,
 		NetworkPolicy: networkPolicy.Clone(),
 		Labels:        containerLabels,

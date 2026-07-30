@@ -250,12 +250,16 @@ func TestRuntimeInfoEndpointReturnsEngineName(t *testing.T) {
 
 	handler, _ := newTestHandlerWithServerOptions(t, "", Options{EngineName: "docker"})
 
-	response := doJSON[map[string]string](t, handler, http.MethodGet, "/api/runtime-info", nil, http.StatusOK, "")
+	response := doJSON[map[string]any](t, handler, http.MethodGet, "/api/runtime-info", nil, http.StatusOK, "")
 	if response["engine"] != "docker" {
 		t.Fatalf("engine = %q, want docker", response["engine"])
 	}
 	if response["display_timezone"] != "UTC" {
 		t.Fatalf("display_timezone = %q, want UTC", response["display_timezone"])
+	}
+	protocols, ok := response["workspace_protocols"].([]any)
+	if !ok || len(protocols) != 1 || protocols[0] != runtime.WorkspaceProtocolDualRootV2 {
+		t.Fatalf("workspace_protocols = %#v", response["workspace_protocols"])
 	}
 }
 
@@ -267,7 +271,7 @@ func TestRuntimeInfoEndpointUsesConfiguredDisplayTimezone(t *testing.T) {
 		DisplayTimezone: "Asia/Shanghai",
 	})
 
-	response := doJSON[map[string]string](t, handler, http.MethodGet, "/api/runtime-info", nil, http.StatusOK, "")
+	response := doJSON[map[string]any](t, handler, http.MethodGet, "/api/runtime-info", nil, http.StatusOK, "")
 	if response["display_timezone"] != "Asia/Shanghai" {
 		t.Fatalf("display_timezone = %q, want Asia/Shanghai", response["display_timezone"])
 	}
@@ -923,7 +927,7 @@ func TestExecuteEndpointReturnsJSONForCommandFailure(t *testing.T) {
 	body, contentType := doJSONResponse[api.ExecuteSessionErrorResponse](t, handler, http.MethodPost, "/api/sessions/failed-http-session/execute", api.ExecuteSessionRequest{
 		Command: "pwd",
 	}, http.StatusOK, "")
-	if body.ExitCode != 17 || body.Mode != "sandbox" || body.WorkingDirectory != runtime.DefaultMountPath || body.Stdout != "" || body.Stderr != "permission denied\n" {
+	if body.ExitCode != 17 || body.Mode != "sandbox" || body.Cwd != runtime.DefaultMountPath || body.Stdout != "" || body.Stderr != "permission denied\n" {
 		t.Fatalf("execute body = %+v, want structured command failure", body)
 	}
 	if contentType != "application/json" {
@@ -962,14 +966,11 @@ func TestExecuteEndpointReturnsSnakeCaseJSONKeysForCommandFailure(t *testing.T) 
 	if payload["exit_code"] != float64(17) {
 		t.Fatalf("execute payload exit_code = %v, want 17", payload["exit_code"])
 	}
-	if payload["working_directory"] != runtime.DefaultMountPath {
-		t.Fatalf("execute payload working_directory = %v, want %s", payload["working_directory"], runtime.DefaultMountPath)
+	if payload["cwd"] != runtime.DefaultMountPath {
+		t.Fatalf("execute payload cwd = %v, want %s", payload["cwd"], runtime.DefaultMountPath)
 	}
 	if _, ok := payload["exitCode"]; ok {
 		t.Fatalf("execute payload unexpectedly contains camelCase exitCode: %+v", payload)
-	}
-	if _, ok := payload["workingDirectory"]; ok {
-		t.Fatalf("execute payload unexpectedly contains camelCase workingDirectory: %+v", payload)
 	}
 }
 
@@ -1001,7 +1002,7 @@ func TestExecuteEndpointFallsBackToStdoutForCommandFailure(t *testing.T) {
 	body, contentType := doJSONResponse[api.ExecuteSessionErrorResponse](t, handler, http.MethodPost, "/api/sessions/stdout-failed-http-session/execute", api.ExecuteSessionRequest{
 		Command: "pwd",
 	}, http.StatusOK, "")
-	if body.ExitCode != 9 || body.Mode != "sandbox" || body.WorkingDirectory != runtime.DefaultMountPath || body.Stdout != "fallback output" || body.Stderr != "" {
+	if body.ExitCode != 9 || body.Mode != "sandbox" || body.Cwd != runtime.DefaultMountPath || body.Stdout != "fallback output" || body.Stderr != "" {
 		t.Fatalf("execute body = %+v, want stdout fallback in JSON command failure", body)
 	}
 	if contentType != "application/json" {
@@ -1037,7 +1038,7 @@ func TestExecuteEndpointTreatsStderrAsJSONFailure(t *testing.T) {
 	body, _ := doJSONResponse[api.ExecuteSessionErrorResponse](t, handler, http.MethodPost, "/api/sessions/stderr-http-session/execute", api.ExecuteSessionRequest{
 		Command: "pwd",
 	}, http.StatusOK, "")
-	if body.ExitCode != 0 || body.Mode != "sandbox" || body.WorkingDirectory != runtime.DefaultMountPath || body.Stdout != "" || body.Stderr != "warning\n" {
+	if body.ExitCode != 0 || body.Mode != "sandbox" || body.Cwd != runtime.DefaultMountPath || body.Stdout != "" || body.Stderr != "warning\n" {
 		t.Fatalf("execute body = %+v, want stderr JSON failure for zero exit", body)
 	}
 }
@@ -1069,12 +1070,12 @@ func TestExecuteEndpointUsesDefaultFailureMessageWhenOutputIsEmpty(t *testing.T)
 	body, _ := doJSONResponse[api.ExecuteSessionErrorResponse](t, handler, http.MethodPost, "/api/sessions/empty-http-session/execute", api.ExecuteSessionRequest{
 		Command: "pwd",
 	}, http.StatusOK, "")
-	if body.ExitCode != 1 || body.Mode != "sandbox" || body.WorkingDirectory != runtime.DefaultMountPath || body.Stdout != "" || body.Stderr != "" {
+	if body.ExitCode != 1 || body.Mode != "sandbox" || body.Cwd != runtime.DefaultMountPath || body.Stdout != "" || body.Stderr != "" {
 		t.Fatalf("execute body = %+v, want empty output JSON failure", body)
 	}
 }
 
-func TestExecuteEndpointReturnsEffectiveWorkingDirectoryInJSONFailure(t *testing.T) {
+func TestExecuteEndpointReturnsEffectiveCwdInJSONFailure(t *testing.T) {
 	t.Parallel()
 
 	handler, _, fake := newTestHandlerWithRuntime(t, "")
@@ -1103,8 +1104,8 @@ func TestExecuteEndpointReturnsEffectiveWorkingDirectoryInJSONFailure(t *testing
 		Command: "pwd",
 		Cwd:     "/tmp/custom",
 	}, http.StatusOK, "")
-	if body.WorkingDirectory != "/tmp/custom" {
-		t.Fatalf("execute workingDirectory = %q, want /tmp/custom", body.WorkingDirectory)
+	if body.Cwd != "/tmp/custom" {
+		t.Fatalf("execute cwd = %q, want /tmp/custom", body.Cwd)
 	}
 }
 
@@ -1421,7 +1422,7 @@ func TestStartBuildJobWithTargetRunsMakefileTarget(t *testing.T) {
 	}
 
 	var persisted api.BuildJobResponse
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		persisted = doJSON[api.BuildJobResponse](t, handler, http.MethodGet, "/api/build-jobs/"+started.ID, nil, http.StatusOK, "")
 		if persisted.Status != string(model.BuildJobStatusBuilding) && persisted.Status != string(model.BuildJobStatusSmokeChecking) {

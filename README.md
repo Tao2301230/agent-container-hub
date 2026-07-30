@@ -296,6 +296,17 @@ curl -X POST http://127.0.0.1:8080/api/sessions/create \
 其中 `duration_ms` 是服务端处理 create 请求的总耗时毫秒数。
 `mounts` 中既包含 environment YAML 里定义的挂载，也包含系统自动追加的 `/workspace` 挂载。调用方也可以显式传入 `destination=/workspace` 覆盖默认 rootfs 挂载；未覆盖时，`/root` 已经留给调用方自定义 bind mount 使用，常见场景会看到 4 到 5 个业务目录加上 `/workspace`。
 
+Agent Platform 使用破坏性的 `dual-root-v2` 协议创建 session。请求必须同时提供宿主 Workspace → `/workspace`、当前 Chat → `/chat`，并固定 `cwd:/workspace`：
+
+```json
+{
+  "workspaceProtocol": "dual-root-v2",
+  "masked_paths": ["/workspace/runtime/chats"]
+}
+```
+
+`GET /api/runtime-info` 的 `workspace_protocols` 会声明支持的版本。当 Workspace 包含宿主 ChatsRoot 时，`masked_paths` 必须列出它在 `/workspace` 下的目标；Hub 按 Workspace bind、mask tmpfs、Chat bind 的顺序创建容器，使当前 Chat 只从 `/chat` 可见。mask 只能位于 `/workspace` 子树，不能与其他 mount 重叠。旧 `workspace-chat-v2` 会被拒绝。
+
 执行命令示例：
 
 ```bash
@@ -326,7 +337,7 @@ hello
 {
   "exit_code": 17,
   "mode": "sandbox",
-  "working_directory": "/workspace",
+  "cwd": "/workspace",
   "stdout": "",
   "stderr": "permission denied\n"
 }
@@ -628,7 +639,8 @@ agent-container-hub/
 - session 创建失败
   - 检查 `environment_name` 是否存在且已启用
   - 检查 `configs/environments/<name>.yaml` 是否存在且格式合法
-  - 检查 mount 的 `destination` 是否重复；若显式使用保留路径 `/workspace`，会覆盖默认 rootfs 挂载
+  - 通用调用检查 mount 的 `destination` 是否重复；`dual-root-v2` 调用必须同时提供 `/workspace` 与 `/chat`，cwd 必须为 `/workspace`
+  - 检查 `masked_paths` 是否位于 `/workspace` 子树、是否与其他 mount 重叠，以及调用方是否仍发送旧 `workspace-chat-v2`
 - execute 日志为空
   - 检查是否设置了 `execution.log_persist: true`
   - 检查 `execution.log_max_output_bytes` 是否过小导致输出被截断
