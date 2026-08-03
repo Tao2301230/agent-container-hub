@@ -374,6 +374,45 @@ EOF
   [[ ! -d "$bundle_dir/run" ]] || { echo "expected deploy not to create run dir" >&2; exit 1; }
 }
 
+test_desktop_config_reset_rebuilds_templates_and_preserves_only_auth_token() {
+  local bundle_dir="$TMP_ROOT/desktop-reset-bundle"
+  local config_dir="$TMP_ROOT/desktop-reset-config"
+  local backup_dir="$TMP_ROOT/config-backups/v0.3.26-to-v0.3.27/agent-container-hub"
+  make_bundle "$bundle_dir"
+  mkdir -p "$config_dir/configs"
+  printf 'AUTH_TOKEN=custom-token\nENGINE=local\nOLD_FIELD=remove-me\n' >"$config_dir/.env"
+  printf 'stale-hub-config\n' >"$config_dir/configs/hub.yml"
+
+  (
+    cd "$bundle_dir"
+    PATH="$SAFE_PATH" /bin/bash ./deploy.sh \
+      --output-dir "$config_dir" \
+      --desktop-config-reset \
+      --desktop-config-backup-dir "$backup_dir" \
+      --desktop-version-from v0.3.26 \
+      --desktop-version-to v0.3.27
+  )
+  grep -Fqx 'ENGINE=local' "$backup_dir/.env"
+  grep -Fqx 'AUTH_TOKEN=custom-token' "$config_dir/.env"
+  ! grep -Fq 'ENGINE=' "$config_dir/.env"
+  ! grep -Fq 'OLD_FIELD=' "$config_dir/.env"
+  cmp "$bundle_dir/configs/hub.example.yml" "$config_dir/configs/hub.yml"
+
+  printf 'FAILED_ONLY=diagnostic\n' >>"$config_dir/.env"
+  (
+    cd "$bundle_dir"
+    PATH="$SAFE_PATH" /bin/bash ./deploy.sh \
+      --output-dir "$config_dir" \
+      --desktop-config-reset \
+      --desktop-config-backup-dir "$backup_dir" \
+      --desktop-version-from v0.3.26 \
+      --desktop-version-to v0.3.27
+  )
+  grep -Fqx 'ENGINE=local' "$backup_dir/.env"
+  grep -Fqx 'FAILED_ONLY=diagnostic' "${backup_dir}.failed/.env"
+  ! grep -Fq 'FAILED_ONLY=' "$config_dir/.env"
+}
+
 test_deploy_initializes_env_and_hub_config
 test_missing_env_fails_fast
 test_explicit_engine_creates_runtime_dirs_and_stops_cleanly
@@ -385,5 +424,6 @@ test_invalid_explicit_engine_fails_fast
 test_removed_local_engine_fails_fast
 test_external_config_initialization_is_idempotent
 test_external_deploy_initialization_is_idempotent
+test_desktop_config_reset_rebuilds_templates_and_preserves_only_auth_token
 
 echo "start.sh tests passed"
