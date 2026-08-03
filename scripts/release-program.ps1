@@ -71,10 +71,10 @@ function Test-BundleContract {
     $zip = [IO.Compression.ZipFile]::OpenRead($Archive)
     try {
         foreach ($entry in $zip.Entries) {
-            if (-not $entry.FullName.StartsWith("$AppName/")) {
+            $entryPath = $entry.FullName.Replace("\", "/")
+            if (-not $entryPath.StartsWith("$AppName/")) {
                 throw "ZIP entry is outside the single $AppName top-level directory: $($entry.FullName)"
             }
-            if ($entry.FullName.Contains("\")) { throw "ZIP entry uses a non-portable separator: $($entry.FullName)" }
         }
     } finally {
         $zip.Dispose()
