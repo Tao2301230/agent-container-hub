@@ -95,10 +95,13 @@ foreach ($path in @(
     (Join-Path $AssetsDir "deploy.ps1"),
     (Join-Path $AssetsDir "start.ps1"),
     (Join-Path $AssetsDir "stop.ps1"),
-    (Join-Path $AssetsDir "program-common.ps1")
+    (Join-Path $AssetsDir "program-common.ps1"),
+    $ProgramCommonTestPath
 )) {
     if (-not (Test-Path -LiteralPath $path)) { throw "Required release input is missing: $path" }
 }
+
+& $ProgramCommonTestPath
 
 foreach ($pair in @(Get-Targets)) {
     $targetOS = $pair.OS
