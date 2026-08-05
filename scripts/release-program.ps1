@@ -11,6 +11,7 @@ $AppName = "agent-container-hub"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = Split-Path -Parent $ScriptDir
 $AssetsDir = Join-Path $ScriptDir "release-assets/program/windows"
+$ProgramCommonTestPath = Join-Path $AssetsDir "program-common_test.ps1"
 $ReleaseDir = Join-Path $RepoRoot "dist/release"
 $TemplatePath = Join-Path $ScriptDir "release-assets/program/manifest.template.json"
 $Utf8NoBom = New-Object Text.UTF8Encoding($false)
